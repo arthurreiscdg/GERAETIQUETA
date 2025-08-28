@@ -105,7 +105,7 @@ class PDFService:
                     old_lw, old_lh, old_margin = self.label_width, self.label_height, self.margin
                     self.label_width, self.label_height, self.margin = effective_lw, effective_lh, effective_margin
                     try:
-                        self._draw_single_label(c, etiquetas[current_label + i], x, y)
+                        self._draw_single_label_custom(c, etiquetas[current_label + i], x, y)
                     finally:
                         self.label_width, self.label_height, self.margin = old_lw, old_lh, old_margin
 
@@ -317,95 +317,95 @@ class PDFService:
         # Restaura o estado das cores
         c.restoreState()
 
-    def _draw_single_label(self, c: canvas.Canvas, etiqueta: dict, x: float, y: float):
+    def _draw_single_label_custom(self, c: canvas.Canvas, etiqueta: dict, x: float, y: float):
         """
-        Desenha uma única etiqueta no PDF com quebra automática de linhas e logo
-        
-        Args:
-            c (canvas.Canvas): Canvas do ReportLab
-            etiqueta (dict): Dados da etiqueta
-            x (float): Posição X
-            y (float): Posição Y
+        Desenha uma etiqueta personalizada no PDF
+        com destaque para OP, unidade, arquivo, quantidade e logo.
         """
-        # Desenha borda da etiqueta
+
+        # --- Borda da etiqueta ---
         c.setStrokeColor(black)
         c.setLineWidth(1)
         c.rect(x, y, self.label_width, self.label_height)
 
-        # Configurações de fonte
-        title_font_size = 10
+        # --- Configurações de fonte ---
+        title_font_size = 12
+        subtitle_font_size = 9
         text_font_size = 8
         small_font_size = 6
 
-        # Margens internas
+        # --- Margens internas ---
         padding = 3 * mm
-        
-        # Dimensões da logo
-        logo_width = 15 * mm
-        logo_height = 8 * mm
-        
-        # Largura disponível para texto (descontando padding e logo)
-        available_width = self.label_width - (2 * padding) - logo_width - (2 * mm)
 
-        # Desenha a logo no canto superior direito
+        # --- Dimensões da logo ---
+        logo_width = 18 * mm
+        logo_height = 10 * mm
+
+        # --- Largura disponível para texto ---
+        available_width = self.label_width - (2 * padding) - logo_width - (3 * mm)
+
+        # --- Logo canto superior direito ---
         logo_x = x + self.label_width - padding - logo_width
         logo_y = y + self.label_height - padding - logo_height
         self._draw_logo(c, logo_x, logo_y, logo_width, logo_height)
 
-        # Posições dentro da etiqueta
+        # --- Texto canto superior esquerdo ---
         text_x = x + padding
-        current_y = y + self.label_height - padding - 12
+        current_y = y + self.label_height - padding - 14
 
-        # Título principal (OP)
-        c.setFillColor(black)  # Garante que o texto seja preto
+        # --- OP (destaque maior) ---
         c.setFont("Helvetica-Bold", title_font_size)
         op_text = f"OP: {etiqueta.get('op', '')}"
         op_lines = self._wrap_text(op_text, "Helvetica-Bold", title_font_size, available_width, c)
         for line in op_lines:
             c.drawString(text_x, current_y, line)
-            current_y -= 12
+            current_y -= 14
 
-        current_y -= 3  # Espaço extra após OP
+        current_y -= 3  # espaço extra
 
-        # Unidade
-        c.setFont("Helvetica-Bold", text_font_size)
+        # --- Unidade ---
+        c.setFont("Helvetica-Bold", subtitle_font_size)
         unidade_text = f"Unidade: {etiqueta.get('unidade', '')}"
-        unidade_lines = self._wrap_text(unidade_text, "Helvetica-Bold", text_font_size, available_width, c)
+        unidade_lines = self._wrap_text(unidade_text, "Helvetica-Bold", subtitle_font_size, available_width, c)
         for line in unidade_lines:
             c.drawString(text_x, current_y, line)
-            current_y -= 10
+            current_y -= 11
 
-        current_y -= 2  # Espaço extra após Unidade
+        current_y -= 2
 
-        # Arquivo - quebra automática de linha
+        # --- Arquivo ---
         c.setFont("Helvetica", text_font_size)
         arquivo_text = f"Arquivo: {etiqueta.get('arquivo', '')}"
         arquivo_lines = self._wrap_text(arquivo_text, "Helvetica", text_font_size, available_width, c)
-        
-        # Limita a 3 linhas para arquivo para não ocupar muito espaço
-        max_arquivo_lines = 3
+
+        # Limite de linhas (2 fixas)
+        max_arquivo_lines = 2
         for i, line in enumerate(arquivo_lines[:max_arquivo_lines]):
             if i == max_arquivo_lines - 1 and len(arquivo_lines) > max_arquivo_lines:
-                # Adiciona "..." se há mais linhas
-                if len(line) > 40:
-                    line = f"{line[:40]}..."
-                else:
-                    line += "..."
+                line = f"{line[:40]}..."
             c.drawString(text_x, current_y, line)
             current_y -= 10
 
-        # Quantidade (exibida no canto inferior direito)
-        c.setFont("Helvetica-Bold", small_font_size)
-        qtde_text = f"Qtde: {etiqueta.get('qtde', 0)}"
-        text_width = c.stringWidth(qtde_text, "Helvetica-Bold", small_font_size)
-        qtde_x = x + self.label_width - padding - text_width
-        c.drawString(qtde_x, y + padding, qtde_text)
+        # --- Linha separadora antes do rodapé ---
+        c.setStrokeColorRGB(0.6, 0.6, 0.6)
+        c.setLineWidth(0.5)
+        c.line(x + padding, y + padding + 12, x + self.label_width - padding, y + padding + 12)
 
-        # Data/hora de geração (canto inferior esquerdo)
+        # --- Rodapé (Data à esquerda / Qtde à direita) ---
+        # Quantidade - fonte maior e mais destacada
+        qtde_font_size = 14  # Fonte maior para quantidade
+        c.setFont("Helvetica-Bold", qtde_font_size)
+        c.setFillColor(black)
+        qtde_text = f"Qtde: {etiqueta.get('qtde', 0)}"
+        text_width = c.stringWidth(qtde_text, "Helvetica-Bold", qtde_font_size)
+        qtde_x = x + self.label_width - padding - text_width
+        c.drawString(qtde_x, y + padding + 2, qtde_text)  # +2 para elevar um pouco
+
+        # Data
         c.setFont("Helvetica", small_font_size)
         data_geracao = datetime.now().strftime("%d/%m/%Y %H:%M")
         c.drawString(text_x, y + padding, data_geracao)
-    
+
     def generate_simple_list_pdf(self, registros: List[Tuple], output_path: str) -> bool:
         """
         Gera PDF com lista simples dos registros (sem etiquetas)
