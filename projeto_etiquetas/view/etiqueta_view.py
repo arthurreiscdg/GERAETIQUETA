@@ -325,7 +325,7 @@ class EtiquetaView:
         file_path = filedialog.asksaveasfilename(
             title="Salvar PDF de Etiquetas",
             defaultextension=".pdf",
-            initialname=default_name,
+            initialfile=default_name,
             filetypes=[("Arquivos PDF", "*.pdf")]
         )
         
@@ -358,7 +358,7 @@ class EtiquetaView:
         file_path = filedialog.asksaveasfilename(
             title="Salvar Relatório PDF",
             defaultextension=".pdf",
-            initialname=default_name,
+            initialfile=default_name,
             filetypes=[("Arquivos PDF", "*.pdf")]
         )
         
