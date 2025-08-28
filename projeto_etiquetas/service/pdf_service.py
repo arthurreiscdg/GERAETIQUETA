@@ -87,15 +87,23 @@ class PDFService:
                     col = i % labels_per_row
 
                     # Calcula posição da etiqueta
-                    x = margin + col * lw
-                    y = page_height - margin - (row + 1) * lh
+                    if single_per_page:
+                        # Para 1 etiqueta por página, desenhamos a etiqueta ocupando toda a página
+                        x = 0
+                        y = 0
+                        effective_lw = page_width
+                        effective_lh = page_height
+                        effective_margin = 0
+                    else:
+                        x = margin + col * lw
+                        y = page_height - margin - (row + 1) * lh
+                        effective_lw = lw
+                        effective_lh = lh
+                        effective_margin = margin
 
-                    # Desenha a etiqueta usando as dimensões locais lw/lh
-                    # Passamos a posição e os dados; o desenho interno usa self.label_width/self.label_height
-                    # então temporariamente desenhamos usando rw/ rh via parâmetros alterados na chamada
-                    # Para manter mudanças mínimas, ajustamos atributos temporários
+                    # Temporariamente substitui dimensões internas para desenhar corretamente
                     old_lw, old_lh, old_margin = self.label_width, self.label_height, self.margin
-                    self.label_width, self.label_height, self.margin = lw, lh, margin
+                    self.label_width, self.label_height, self.margin = effective_lw, effective_lh, effective_margin
                     try:
                         self._draw_single_label(c, etiquetas[current_label + i], x, y)
                     finally:
