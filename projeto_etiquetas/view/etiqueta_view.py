@@ -86,10 +86,10 @@ class EtiquetaView:
         # Botão Importar Excel
         import_btn = ttk.Button(buttons_frame, text="📁 Importar Excel", 
                                command=self.import_excel, width=20)
-        import_btn.grid(row=0, column=0, pady=5, sticky=tk.W)
+        import_btn.grid(row=0, column=0, pady=3, sticky=tk.W)
         
         # Separador
-        ttk.Separator(buttons_frame, orient='horizontal').grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10)
+        ttk.Separator(buttons_frame, orient='horizontal').grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8)
         
         # Frame de pesquisa
         search_frame = ttk.LabelFrame(buttons_frame, text="Pesquisar", padding="5")
@@ -107,46 +107,46 @@ class EtiquetaView:
         self.search_value.grid(row=1, column=1, padx=5, pady=(5, 0))
         self.search_value.bind('<Return>', lambda event: self.search_data())
         
-        search_btn = ttk.Button(search_frame, text="🔍 Buscar", command=self.search_data)
-        search_btn.grid(row=2, column=0, columnspan=2, pady=5)
+        search_btn = ttk.Button(search_frame, text="🔍 Buscar", command=self.search_data, width=20)
+        search_btn.grid(row=2, column=0, columnspan=2, pady=3)
         
-        clear_search_btn = ttk.Button(search_frame, text="🗙 Limpar", command=self.clear_search)
-        clear_search_btn.grid(row=3, column=0, columnspan=2, pady=(0, 5))
+        clear_search_btn = ttk.Button(search_frame, text="🗙 Limpar", command=self.clear_search, width=20)
+        clear_search_btn.grid(row=3, column=0, columnspan=2, pady=3)
         
         # Separador
-        ttk.Separator(buttons_frame, orient='horizontal').grid(row=3, column=0, sticky=(tk.W, tk.E), pady=10)
+        ttk.Separator(buttons_frame, orient='horizontal').grid(row=3, column=0, sticky=(tk.W, tk.E), pady=8)
         
         # Botões de PDF
         pdf_frame = ttk.LabelFrame(buttons_frame, text="Gerar PDF", padding="5")
         pdf_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
         
         labels_btn = ttk.Button(pdf_frame, text="🏷️ Etiquetas", 
-                               command=self.generate_labels_pdf, width=18)
-        labels_btn.grid(row=0, column=0, pady=2)
+                               command=self.generate_labels_pdf, width=20)
+        labels_btn.grid(row=0, column=0, pady=3)
         
         list_btn = ttk.Button(pdf_frame, text="📋 Relatório", 
-                             command=self.generate_list_pdf, width=18)
-        list_btn.grid(row=1, column=0, pady=2)
+                             command=self.generate_list_pdf, width=20)
+        list_btn.grid(row=1, column=0, pady=3)
         
         # Separador
-        ttk.Separator(buttons_frame, orient='horizontal').grid(row=5, column=0, sticky=(tk.W, tk.E), pady=10)
+        ttk.Separator(buttons_frame, orient='horizontal').grid(row=5, column=0, sticky=(tk.W, tk.E), pady=8)
         
         # Botões de gerenciamento
         mgmt_frame = ttk.LabelFrame(buttons_frame, text="Gerenciar", padding="5")
         mgmt_frame.grid(row=6, column=0, sticky=(tk.W, tk.E), pady=5)
         
         refresh_btn = ttk.Button(mgmt_frame, text="🔄 Atualizar", 
-                                command=self.refresh_data, width=18)
-        refresh_btn.grid(row=0, column=0, pady=2)
+                                command=self.refresh_data, width=20)
+        refresh_btn.grid(row=0, column=0, pady=3)
         
         delete_btn = ttk.Button(mgmt_frame, text="🗑️ Excluir Selecionado", 
-                               command=self.delete_selected, width=18)
-        delete_btn.grid(row=1, column=0, pady=2)
+                               command=self.delete_selected, width=20)
+        delete_btn.grid(row=1, column=0, pady=3)
         
         # Botão para alternar visualização
         self.view_btn = ttk.Button(mgmt_frame, text="📋 Visualização Simples", 
-                                  command=self.toggle_view, width=18)
-        self.view_btn.grid(row=2, column=0, pady=2)
+                                  command=self.toggle_view, width=20)
+        self.view_btn.grid(row=2, column=0, pady=3)
         
     # Botão de limpar tudo removido por segurança
         
@@ -155,8 +155,8 @@ class EtiquetaView:
         info_frame.grid(row=7, column=0, sticky=(tk.W, tk.E), pady=5)
         
         info_btn = ttk.Button(info_frame, text="ℹ️ Sobre", 
-                             command=self.show_info, width=18)
-        info_btn.grid(row=0, column=0, pady=2)
+                             command=self.show_info, width=20)
+        info_btn.grid(row=0, column=0, pady=3)
 
     def prev_page(self):
         if self.page > 1:
