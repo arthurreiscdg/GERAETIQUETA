@@ -1,6 +1,11 @@
 import sqlite3
 import os
+import logging
 from typing import List, Tuple
+
+# Configurar logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -33,6 +38,9 @@ class Database:
 
         # Inicializa esquema (create table se necessário)
         self.init_database()
+        
+        # Migra a tabela para adicionar coluna nome se necessário
+        self._migrate_add_nome_column()
 
     def init_database(self):
         """Cria a tabela se ela não existir no sqlitecloud"""
@@ -48,6 +56,7 @@ class Database:
                     unidade TEXT NOT NULL,
                     arquivos TEXT NOT NULL,
                     qtde INTEGER NOT NULL,
+                    nome TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -70,16 +79,47 @@ class Database:
         import sqlitecloud  # type: ignore
         return sqlitecloud.connect(self.db_path)
 
-    def insert_registro(self, op: str, unidade: str, arquivos: str, qtde: int) -> bool:
+    def _migrate_add_nome_column(self):
+        """Adiciona a coluna 'nome' à tabela se ela não existir"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Verifica se a coluna 'nome' já existe
+            cursor.execute("PRAGMA table_info(etiquetas)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'nome' not in columns:
+                print("Adicionando coluna 'nome' à tabela etiquetas...")
+                cursor.execute("ALTER TABLE etiquetas ADD COLUMN nome TEXT DEFAULT ''")
+                try:
+                    conn.commit()
+                    print("Coluna 'nome' adicionada com sucesso!")
+                except Exception:
+                    pass
+            else:
+                print("Coluna 'nome' já existe na tabela.")
+                
+        except Exception as e:
+            print(f"Erro ao migrar tabela: {e}")
+        finally:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+    def insert_registro(self, op: str, unidade: str, arquivos: str, qtde: int, nome: str = "") -> bool:
         """Insere um novo registro na tabela."""
         conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO etiquetas (op, unidade, arquivos, qtde)
-                VALUES (?, ?, ?, ?)
-            ''', (op, unidade, arquivos, qtde))
+                INSERT INTO etiquetas (op, unidade, arquivos, qtde, nome)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (op, unidade, arquivos, qtde, nome))
             try:
                 conn.commit()
             except Exception:
@@ -95,22 +135,48 @@ class Database:
             except Exception:
                 pass
 
-    def insert_multiple_registros(self, registros: List[Tuple[str, str, str, int]]) -> bool:
-        """Insere múltiplos registros de uma vez."""
+    def insert_multiple_registros(self, registros: List[Tuple]) -> bool:
+        """Insere múltiplos registros de uma vez. Aceita tuplas com 4 ou 5 elementos."""
         conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            
+            logger.debug(f"Inserindo {len(registros)} registros")
+            
+            # Processa cada registro para garantir que tenha nome
+            registros_processados = []
+            for i, registro in enumerate(registros):
+                logger.debug(f"Registro {i+1}: {registro} (len={len(registro)})")
+                
+                if len(registro) == 4:
+                    # Formato antigo: (op, unidade, arquivos, qtde)
+                    op, unidade, arquivos, qtde = registro
+                    nome = ""
+                    logger.debug(f"Formato antigo detectado: op={op}, unidade={unidade}, arquivo={arquivos}, qtde={qtde}")
+                elif len(registro) >= 5:
+                    # Formato novo: (op, unidade, arquivos, qtde, nome)
+                    op, unidade, arquivos, qtde, nome = registro[:5]
+                    logger.debug(f"Formato novo detectado: op={op}, unidade={unidade}, arquivo={arquivos}, qtde={qtde}, nome={nome}")
+                else:
+                    logger.warning(f"Registro inválido ignorado: {registro}")
+                    continue  # Pula registros inválidos
+                
+                registros_processados.append((op, unidade, arquivos, qtde, nome))
+            
+            logger.debug(f"Processados {len(registros_processados)} registros")
+            
             cursor.executemany('''
-                INSERT INTO etiquetas (op, unidade, arquivos, qtde)
-                VALUES (?, ?, ?, ?)
-            ''', registros)
+                INSERT INTO etiquetas (op, unidade, arquivos, qtde, nome)
+                VALUES (?, ?, ?, ?, ?)
+            ''', registros_processados)
             try:
                 conn.commit()
             except Exception:
                 pass
             return True
         except Exception as e:
+            logger.error(f"Erro ao inserir múltiplos registros: {e}")
             print(f"Erro ao inserir múltiplos registros: {e}")
             return False
         finally:
@@ -126,7 +192,7 @@ class Database:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('SELECT id, op, unidade, arquivos, qtde FROM etiquetas ORDER BY id DESC')
+            cursor.execute('SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas ORDER BY id DESC')
             return cursor.fetchall()
         except Exception as e:
             print(f"Erro ao buscar registros: {e}")
@@ -144,8 +210,8 @@ class Database:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            if campo in ("op", "unidade", "arquivos"):
-                query = f'SELECT id, op, unidade, arquivos, qtde FROM etiquetas WHERE {campo} LIKE ? ORDER BY id DESC'
+            if campo in ("op", "unidade", "arquivos", "nome"):
+                query = f'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas WHERE {campo} LIKE ? ORDER BY id DESC'
                 cursor.execute(query, (f'%{valor}%',))
                 return cursor.fetchall()
             return []
@@ -222,11 +288,16 @@ class Database:
             novos = []
             
             for registro in registros:
-                op, unidade, arquivos, qtde = registro
+                # Suporta tanto formato antigo (4 elementos) quanto novo (5 elementos)
+                if len(registro) == 4:
+                    op, unidade, arquivos, qtde = registro
+                    nome = ""
+                else:
+                    op, unidade, arquivos, qtde, nome = registro[:5]
                 
                 # Verifica se já existe registro com mesma OP, unidade e arquivo
                 cursor.execute('''
-                    SELECT id, op, unidade, arquivos, qtde 
+                    SELECT id, op, unidade, arquivos, qtde, nome 
                     FROM etiquetas 
                     WHERE op = ? AND unidade = ? AND arquivos = ?
                 ''', (op, unidade, arquivos))
@@ -235,7 +306,7 @@ class Database:
                 
                 if existente:
                     duplicatas.append({
-                        'novo': registro,
+                        'novo': (op, unidade, arquivos, qtde, nome),
                         'existente': existente,
                         'mesmo_qtde': existente[4] == qtde
                     })

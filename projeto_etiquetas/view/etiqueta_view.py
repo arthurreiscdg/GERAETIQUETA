@@ -87,7 +87,7 @@ class EtiquetaView:
         
         # Campo de pesquisa
         ttk.Label(search_frame, text="Campo:").grid(row=0, column=0, sticky=tk.W)
-        self.search_field = ttk.Combobox(search_frame, values=["op", "unidade", "arquivos"], 
+        self.search_field = ttk.Combobox(search_frame, values=["op", "unidade", "arquivos", "nome"], 
                                         state="readonly", width=10)
         self.search_field.set("op")
         self.search_field.grid(row=0, column=1, padx=5)
@@ -151,7 +151,7 @@ class EtiquetaView:
         data_frame.rowconfigure(0, weight=1)
         
         # Treeview para mostrar os dados
-        columns = ("ID", "OP", "Unidade", "Arquivo", "Qtde")
+        columns = ("ID", "OP", "Unidade", "Arquivo", "Qtde", "Nome")
         self.tree = ttk.Treeview(data_frame, columns=columns, show="headings", height=20)
         
         # Configurar colunas
@@ -160,12 +160,14 @@ class EtiquetaView:
         self.tree.heading("Unidade", text="Unidade")
         self.tree.heading("Arquivo", text="Arquivo")
         self.tree.heading("Qtde", text="Qtde")
+        self.tree.heading("Nome", text="Nome")
         
         self.tree.column("ID", width=50, anchor=tk.CENTER)
         self.tree.column("OP", width=100, anchor=tk.CENTER)
         self.tree.column("Unidade", width=150, anchor=tk.W)
-        self.tree.column("Arquivo", width=300, anchor=tk.W)
+        self.tree.column("Arquivo", width=250, anchor=tk.W)  # Reduzida para dar espaço ao Nome
         self.tree.column("Qtde", width=80, anchor=tk.CENTER)
+        self.tree.column("Nome", width=150, anchor=tk.W)
         
         # Scrollbars
         v_scrollbar = ttk.Scrollbar(data_frame, orient=tk.VERTICAL, command=self.tree.yview)

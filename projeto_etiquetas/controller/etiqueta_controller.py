@@ -4,6 +4,11 @@ from service.pdf_service import PDFService
 from typing import List, Tuple, Optional
 from tkinter import messagebox
 import os
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class EtiquetaController:
     def __init__(self):

@@ -1,7 +1,12 @@
 import pandas as pd
 import os
+import logging
 from typing import List, Tuple, Optional
 from tkinter import messagebox
+
+# Configurar logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class ExcelService:
     def __init__(self):
@@ -87,8 +92,40 @@ class ExcelService:
                     
                     registros_planilha = []
                     
+                    # Primeiro, vamos encontrar o nome na última linha válida da coluna B
+                    nome_planilha = ""
+                    # Percorre de trás para frente procurando um nome na coluna B
+                    for i in range(len(df) - 1, 0, -1):  # De baixo para cima, excluindo linha 0
+                        cell_b = df.iloc[i, 1]
+                        cell_a = df.iloc[i, 0]
+                        
+                        # Pula linha "Quantidade total" 
+                        if not pd.isna(cell_a):
+                            cell_a_str = str(cell_a).strip().lower()
+                            if "quantidade total" in cell_a_str or "qtde total" in cell_a_str:
+                                continue
+                        
+                        # Se encontrou algo na coluna B que não é número
+                        if not pd.isna(cell_b):
+                            cell_b_str = str(cell_b).strip()
+                            if cell_b_str:
+                                # Testa se não é número
+                                try:
+                                    float(cell_b_str)
+                                    # É número, continua procurando
+                                except (ValueError, TypeError):
+                                    # Não é número, pode ser o nome
+                                    if cell_b_str.lower() not in ["quantidade", "qtde", "total"]:
+                                        nome_planilha = cell_b_str
+                                        logger.debug(f"Nome da planilha encontrado na linha {i+1}: '{nome_planilha}'")
+                                        break
+                    
+                    if not nome_planilha:
+                        logger.debug("Nenhum nome encontrado na planilha")
+                    
                     # Percorre as linhas a partir da linha 2 (índice 1)
-                    for i in range(1, len(df)):
+                    i = 1
+                    while i < len(df):
                         # Arquivo está na coluna A (índice 0)
                         arquivo = df.iloc[i, 0]
                         
@@ -97,16 +134,19 @@ class ExcelService:
                         
                         # Pula linhas vazias
                         if pd.isna(arquivo) and pd.isna(qtde):
+                            i += 1
                             continue
                         
                         # Verifica se arquivo não está vazio
                         if pd.isna(arquivo) or str(arquivo).strip() == "":
+                            i += 1
                             continue
                         
                         # Ignora linhas onde A contém "Quantidade total" ou similar
                         arquivo_str = str(arquivo).strip().lower() if not pd.isna(arquivo) else ""
                         if "quantidade total" in arquivo_str or "qtde total" in arquivo_str or arquivo_str == "total":
                             print(f"Ignorando linha {i+1}: '{arquivo_str}' na coluna A")
+                            i += 1
                             continue
                         
                         # Converte quantidade para inteiro, se não conseguir, usa 0
@@ -117,10 +157,18 @@ class ExcelService:
                         
                         # Se quantidade for 0 ou negativa, pula
                         if qtde <= 0:
+                            i += 1
                             continue
                         
+                        logger.debug(f"Linha {i+1}: arquivo='{str(arquivo).strip()}', qtde={qtde}")
+                        
                         arquivo_str = str(arquivo).strip()
-                        registros_planilha.append((op, unidade, arquivo_str, qtde))
+                        # Usa o nome encontrado na planilha para todos os registros
+                        registro = (op, unidade, arquivo_str, qtde, nome_planilha)
+                        logger.debug(f"Criando registro: {registro}")
+                        registros_planilha.append(registro)
+                        
+                        i += 1
                     
                     if registros_planilha:
                         todos_registros.extend(registros_planilha)
@@ -220,8 +268,19 @@ class ExcelService:
         registros_validos = 0
         problemas = []
         
-        for i, (op, unidade, arquivo, qtde) in enumerate(registros, 1):
+        for i, registro in enumerate(registros, 1):
+            # Desempacota os dados - pode ter 4 ou 5 elementos
+            if len(registro) == 4:
+                op, unidade, arquivo, qtde = registro
+                nome = ""
+            elif len(registro) >= 5:
+                op, unidade, arquivo, qtde, nome = registro[:5]
+            else:
+                problemas.append(f"Linha {i}: Registro inválido")
+                continue
+                
             linha_ok = True
+            logger.debug(f"Validando linha {i}: op={op}, unidade={unidade}, arquivo={arquivo}, qtde={qtde}, nome={nome}")
             
             # Verifica OP
             if not op or op.strip() == "":

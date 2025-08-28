@@ -138,14 +138,22 @@ class PDFService:
         etiquetas = []
 
         for registro in registros:
-            # registro = (id, op, unidade, arquivos, qtde)
+            # registro = (id, op, unidade, arquivos, qtde, nome) - agora com nome adicional
             if len(registro) >= 5:
-                _, op, unidade, arquivos, qtde = registro
+                if len(registro) == 5:
+                    # Formato antigo sem nome
+                    _, op, unidade, arquivos, qtde = registro
+                    nome = ""
+                else:
+                    # Formato novo com nome
+                    _, op, unidade, arquivos, qtde, nome = registro[:6]
+                
                 etiqueta = {
                     'op': str(op),
                     'unidade': str(unidade),
                     'arquivo': str(arquivos),
-                    'qtde': int(qtde) if qtde is not None else 0
+                    'qtde': int(qtde) if qtde is not None else 0,
+                    'nome': str(nome) if nome else ""
                 }
                 etiquetas.append(etiqueta)
 
@@ -385,6 +393,18 @@ class PDFService:
                 line = f"{line[:40]}..."
             c.drawString(text_x, current_y, line)
             current_y -= 10
+
+        # --- Nome (se disponível) ---
+        nome = etiqueta.get('nome', '')
+        if nome:
+            current_y -= 2  # espaço extra
+            c.setFont("Helvetica-Bold", text_font_size)
+            c.setFillColor(black)
+            nome_text = f"Nome: {nome}"
+            nome_lines = self._wrap_text(nome_text, "Helvetica-Bold", text_font_size, available_width, c)
+            for line in nome_lines[:1]:  # Máximo 1 linha para nome
+                c.drawString(text_x, current_y, line)
+                current_y -= 10
 
         # --- Linha separadora antes do rodapé ---
         c.setStrokeColorRGB(0.6, 0.6, 0.6)
