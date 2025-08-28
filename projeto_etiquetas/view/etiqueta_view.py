@@ -17,8 +17,11 @@ class EtiquetaView:
 
         # Paginação
         self.page = 1
-        self.page_size = 200
+        self.page_size = 50
         self.total_records = 0
+        
+        # Modo de visualização
+        self.grouped_view = True  # True = agrupado por OP, False = lista simples
 
         # Loading state
         self.is_loading = False
@@ -139,6 +142,11 @@ class EtiquetaView:
         delete_btn = ttk.Button(mgmt_frame, text="🗑️ Excluir Selecionado", 
                                command=self.delete_selected, width=18)
         delete_btn.grid(row=1, column=0, pady=2)
+        
+        # Botão para alternar visualização
+        self.view_btn = ttk.Button(mgmt_frame, text="📋 Visualização Simples", 
+                                  command=self.toggle_view, width=18)
+        self.view_btn.grid(row=2, column=0, pady=2)
         
     # Botão de limpar tudo removido por segurança
         
@@ -443,15 +451,66 @@ class EtiquetaView:
         self.status_label.config(text=f"Erro ao carregar dados: {error_msg}")
         messagebox.showerror("Erro", f"Erro ao carregar dados: {error_msg}")
     
+    def toggle_view(self):
+        """Alterna entre visualização agrupada e simples"""
+        self.grouped_view = not self.grouped_view
+        
+        # Atualiza o texto do botão
+        if self.grouped_view:
+            self.view_btn.config(text="📋 Visualização Simples")
+        else:
+            self.view_btn.config(text="🗂️ Agrupar por OP")
+        
+        # Atualiza a visualização
+        self.update_tree_data(self.filtered_data)
+
     def update_tree_data(self, data):
-        """Atualiza os dados do treeview"""
+        """Atualiza os dados do treeview com opção de agrupamento por OP"""
         # Limpa dados existentes
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        # Adiciona novos dados
-        for registro in data:
-            self.tree.insert("", tk.END, values=registro)
+        if not data:
+            return
+        
+        if self.grouped_view:
+            # Visualização agrupada por OP
+            # Agrupa os dados por OP
+            ops_dict = {}
+            for registro in data:
+                # registro = (id, op, unidade, arquivos, qtde, nome)
+                op = registro[1]
+                if op not in ops_dict:
+                    ops_dict[op] = []
+                ops_dict[op].append(registro)
+            
+            # Ordena as OPs
+            sorted_ops = sorted(ops_dict.keys())
+            
+            # Adiciona os dados agrupados na árvore
+            for op in sorted_ops:
+                registros_op = ops_dict[op]
+                
+                # Calcula totais para a OP
+                total_itens = len(registros_op)
+                total_qtde = sum(reg[4] for reg in registros_op)
+                
+                # Insere o nó pai (OP)
+                op_node = self.tree.insert("", tk.END, values=(
+                    "", op, f"{total_itens} itens", "", f"Total: {total_qtde}", ""
+                ), tags=("op_parent",))
+                
+                # Insere os registros filhos
+                for registro in registros_op:
+                    self.tree.insert(op_node, tk.END, values=registro, tags=("op_child",))
+            
+            # Configura as tags para estilizar os nós pais
+            self.tree.tag_configure("op_parent", background="#E8F4FD", font=("Arial", 9, "bold"))
+            self.tree.tag_configure("op_child", background="white")
+        else:
+            # Visualização simples (lista)
+            for registro in data:
+                self.tree.insert("", tk.END, values=registro)
     
     def update_stats(self):
         """Atualiza as estatísticas"""
@@ -545,19 +604,38 @@ class EtiquetaView:
             pass
     
     def get_selected_records(self):
-        """Retorna os registros selecionados"""
+        """Retorna os registros selecionados (apenas registros filhos, não nós de OP)"""
         selection = self.tree.selection()
         if not selection:
             return []
         
         selected_records = []
         for item in selection:
-            values = self.tree.item(item, "values")
-            # Converte para tupla com tipos corretos e inclui 'nome' se disponível
-            # values normalmente: (id, op, unidade, arquivo, qtde, nome)
-            nome_val = values[5] if len(values) > 5 else ""
-            record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
-            selected_records.append(record)
+            # Verifica se é um nó pai (OP) ou filho (registro)
+            tags = self.tree.item(item, "tags")
+            
+            if "op_parent" in tags:
+                # Se selecionou uma OP, inclui todos os filhos dela
+                children = self.tree.get_children(item)
+                for child in children:
+                    values = self.tree.item(child, "values")
+                    if values[0]:  # Se tem ID (não é linha de total)
+                        try:
+                            nome_val = values[5] if len(values) > 5 else ""
+                            record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
+                            selected_records.append(record)
+                        except (ValueError, IndexError):
+                            continue
+            elif "op_child" in tags:
+                # Se selecionou um registro específico
+                values = self.tree.item(item, "values")
+                if values[0]:  # Se tem ID
+                    try:
+                        nome_val = values[5] if len(values) > 5 else ""
+                        record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
+                        selected_records.append(record)
+                    except (ValueError, IndexError):
+                        continue
         
         return selected_records
     
