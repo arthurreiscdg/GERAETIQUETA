@@ -4,48 +4,42 @@ from typing import List, Tuple
 
 
 class Database:
-    def __init__(self, db_path: str = "etiquetas.db"):
+    def __init__(self, db_path: str = None):
         """
-        Inicializa a conexão com o banco de dados SQLite.
-
-        Se a variável de ambiente SQLITE_DB_URL estiver definida, ela sobrescreve o
-        argumento db_path (útil para conexões como sqlitecloud://...).
+        Inicializa conexão EXCLUSIVA com sqlitecloud.
+        
+        Usa a variável de ambiente SQLITE_DB_URL ou string hardcoded para o projeto.
         """
-        # Permite sobrescrever pelo ambiente: SQLITE_DB_URL (útil para sqlitecloud)
+        # Prioriza variável de ambiente, senão usa string de conexão padrão do projeto
         env_db = os.environ.get("SQLITE_DB_URL")
-        self.db_path = env_db or db_path
+        if env_db:
+            self.db_path = env_db
+        else:
+            # String de conexão hardcoded para este projeto
+            self.db_path = "sqlitecloud://cv0idhxxhk.g2.sqlite.cloud:8860/auth.sqlitecloud?apikey=4gtJpnQlCzrAfmGgn9QOdDrFDvalmk3APBcawzNvssc"
 
-        # Detecta se deve usar sqlitecloud (URI começando com sqlitecloud://)
-        self.use_cloud = isinstance(self.db_path, str) and self.db_path.startswith("sqlitecloud://")
+        # Valida formato da URI
+        if not isinstance(self.db_path, str) or not self.db_path.startswith("sqlitecloud://"):
+            raise RuntimeError(f"URI deve começar com 'sqlitecloud://'. Valor atual: {self.db_path}")
 
-        # Verifica disponibilidade do pacote sqlitecloud se for necessário
-        self._cloud_available = False
-        if self.use_cloud:
-            try:
-                import sqlitecloud  # type: ignore
-                self._cloud_available = True
-            except ImportError:
-                print("Pacote 'sqlitecloud' não está instalado. Instale com: pip install sqlitecloud")
+        self.use_cloud = True
+
+        # Verifica disponibilidade do pacote sqlitecloud
+        try:
+            import sqlitecloud  # type: ignore
+            self._cloud_available = True
+        except ImportError:
+            raise RuntimeError("Pacote 'sqlitecloud' não está instalado. Instale com: pip install sqlitecloud")
 
         # Inicializa esquema (create table se necessário)
-        # se a conexão em nuvem for requerida mas o pacote estiver ausente,
-        # init_database será chamada mesmo assim - métodos posteriores vão
-        # gerar um erro claro ao tentar abrir a conexão.
         self.init_database()
 
     def init_database(self):
-        """Cria a tabela se ela não existir"""
+        """Cria a tabela se ela não existir no sqlitecloud"""
         conn = None
         try:
-            if self.use_cloud:
-                if not getattr(self, "_cloud_available", False):
-                    # Não tentamos criar esquema na nuvem se o pacote estiver ausente
-                    raise ImportError("sqlitecloud não disponível")
-                import sqlitecloud  # type: ignore
-                conn = sqlitecloud.connect(self.db_path)
-            else:
-                conn = sqlite3.connect(self.db_path)
-
+            import sqlitecloud  # type: ignore
+            conn = sqlitecloud.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS etiquetas (
@@ -62,8 +56,6 @@ class Database:
             except Exception:
                 # alguns conectores na nuvem podem auto-commit ou não implementar commit
                 pass
-        except ImportError:
-            print("Pacote 'sqlitecloud' não está instalado. Instale com: pip install sqlitecloud")
         except Exception as e:
             print(f"Erro ao inicializar banco de dados: {e}")
         finally:
@@ -74,17 +66,9 @@ class Database:
                 pass
 
     def _get_connection(self):
-        """Retorna uma nova conexão, seja local (sqlite3) ou via sqlitecloud."""
-        if self.use_cloud:
-            if not getattr(self, "_cloud_available", False):
-                raise RuntimeError(
-                    "Conector 'sqlitecloud' não está instalado. Instale com: pip install sqlitecloud "
-                    "ou ajuste a variável de ambiente SQLITE_DB_URL para um caminho local."
-                )
-            import sqlitecloud  # type: ignore
-
-            return sqlitecloud.connect(self.db_path)
-        return sqlite3.connect(self.db_path)
+        """Retorna uma nova conexão via sqlitecloud."""
+        import sqlitecloud  # type: ignore
+        return sqlitecloud.connect(self.db_path)
 
     def insert_registro(self, op: str, unidade: str, arquivos: str, qtde: int) -> bool:
         """Insere um novo registro na tabela."""
