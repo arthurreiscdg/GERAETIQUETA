@@ -105,9 +105,49 @@ class PDFService:
 
         return etiquetas
     
+    def _wrap_text(self, text: str, font_name: str, font_size: int, max_width: float, canvas_obj) -> List[str]:
+        """
+        Quebra texto em múltiplas linhas para caber na largura especificada
+        
+        Args:
+            text (str): Texto para quebrar
+            font_name (str): Nome da fonte
+            font_size (int): Tamanho da fonte
+            max_width (float): Largura máxima em pontos
+            canvas_obj: Objeto canvas para calcular largura do texto
+            
+        Returns:
+            List[str]: Lista de linhas quebradas
+        """
+        if not text:
+            return [""]
+            
+        words = text.split(' ')
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            text_width = canvas_obj.stringWidth(test_line, font_name, font_size)
+            
+            if text_width <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    # Palavra muito longa, força quebra
+                    lines.append(word)
+        
+        if current_line:
+            lines.append(current_line)
+            
+        return lines if lines else [""]
+
     def _draw_single_label(self, c: canvas.Canvas, etiqueta: dict, x: float, y: float):
         """
-        Desenha uma única etiqueta no PDF
+        Desenha uma única etiqueta no PDF com quebra automática de linhas
         
         Args:
             c (canvas.Canvas): Canvas do ReportLab
@@ -127,6 +167,9 @@ class PDFService:
 
         # Margens internas
         padding = 3 * mm
+        
+        # Largura disponível para texto (descontando padding)
+        available_width = self.label_width - (2 * padding)
 
         # Posições dentro da etiqueta
         text_x = x + padding
@@ -134,27 +177,44 @@ class PDFService:
 
         # Título principal (OP)
         c.setFont("Helvetica-Bold", title_font_size)
-        c.drawString(text_x, current_y, f"OP: {etiqueta.get('op', '')}")
-        current_y -= 15
+        op_text = f"OP: {etiqueta.get('op', '')}"
+        op_lines = self._wrap_text(op_text, "Helvetica-Bold", title_font_size, available_width, c)
+        for line in op_lines:
+            c.drawString(text_x, current_y, line)
+            current_y -= 12
+
+        current_y -= 3  # Espaço extra após OP
 
         # Unidade
         c.setFont("Helvetica-Bold", text_font_size)
-        c.drawString(text_x, current_y, f"Unidade: {etiqueta.get('unidade', '')}")
-        current_y -= 12
+        unidade_text = f"Unidade: {etiqueta.get('unidade', '')}"
+        unidade_lines = self._wrap_text(unidade_text, "Helvetica-Bold", text_font_size, available_width, c)
+        for line in unidade_lines:
+            c.drawString(text_x, current_y, line)
+            current_y -= 10
 
-        # Arquivo
+        current_y -= 2  # Espaço extra após Unidade
+
+        # Arquivo - quebra automática de linha
         c.setFont("Helvetica", text_font_size)
-        arquivo_text = etiqueta.get('arquivo', '')
-        # Trunca se muito longo
-        if len(arquivo_text) > 25:
-            arquivo_text = arquivo_text[:22] + "..."
-        c.drawString(text_x, current_y, f"Arquivo: {arquivo_text}")
-        current_y -= 12
+        arquivo_text = f"Arquivo: {etiqueta.get('arquivo', '')}"
+        arquivo_lines = self._wrap_text(arquivo_text, "Helvetica", text_font_size, available_width, c)
+        
+        # Limita a 3 linhas para arquivo para não ocupar muito espaço
+        max_arquivo_lines = 3
+        for i, line in enumerate(arquivo_lines[:max_arquivo_lines]):
+            if i == max_arquivo_lines - 1 and len(arquivo_lines) > max_arquivo_lines:
+                # Adiciona "..." se há mais linhas
+                if len(line) > 40:
+                    line = line[:40] + "..."
+                else:
+                    line += "..."
+            c.drawString(text_x, current_y, line)
+            current_y -= 10
 
         # Quantidade (exibida no canto inferior direito)
         c.setFont("Helvetica-Bold", small_font_size)
         qtde_text = f"Qtde: {etiqueta.get('qtde', 0)}"
-
         text_width = c.stringWidth(qtde_text, "Helvetica-Bold", small_font_size)
         qtde_x = x + self.label_width - padding - text_width
         c.drawString(qtde_x, y + padding, qtde_text)
