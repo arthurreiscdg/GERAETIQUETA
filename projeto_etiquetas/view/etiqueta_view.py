@@ -3,6 +3,7 @@ from tkinter import ttk, filedialog, messagebox
 from controller.etiqueta_controller import EtiquetaController
 import os
 from datetime import datetime
+import threading
 
 class EtiquetaView:
     def __init__(self):
@@ -11,6 +12,10 @@ class EtiquetaView:
         self.root = tk.Tk()
         self.current_data = []
         self.filtered_data = []
+        
+        # Loading state
+        self.is_loading = False
+        self.loading_window = None
         
         # Configuração da janela principal
         self.setup_main_window()
@@ -214,16 +219,33 @@ class EtiquetaView:
         )
         
         if file_path:
-            self.status_label.config(text="Importando Excel...")
-            self.root.update()
+            def import_worker():
+                try:
+                    self.show_loading("Validando arquivo Excel...")
+                    self.root.after(100, lambda: self.update_loading_message("Importando dados..."))
+                    
+                    success = self.controller.import_excel_file(file_path)
+                    
+                    self.root.after(0, lambda: self._finish_import(success))
+                except Exception as e:
+                    self.root.after(0, lambda: self._finish_import(False, str(e)))
             
-            success = self.controller.import_excel_file(file_path)
-            
-            if success:
-                self.refresh_data()
-                self.status_label.config(text="Excel importado com sucesso")
-            else:
-                self.status_label.config(text="Falha ao importar Excel")
+            # Executa importação em thread separada
+            thread = threading.Thread(target=import_worker, daemon=True)
+            thread.start()
+    
+    def _finish_import(self, success, error_msg=None):
+        """Finaliza a importação do Excel"""
+        self.hide_loading()
+        
+        if success:
+            self.refresh_data()
+            self.status_label.config(text="Excel importado com sucesso")
+            messagebox.showinfo("Sucesso", "Arquivo Excel importado com sucesso!")
+        else:
+            error_text = f"Falha ao importar Excel: {error_msg}" if error_msg else "Falha ao importar Excel"
+            self.status_label.config(text=error_text)
+            messagebox.showerror("Erro", error_text)
     
     def search_data(self):
         """Executa a pesquisa"""
@@ -251,15 +273,36 @@ class EtiquetaView:
     
     def refresh_data(self):
         """Atualiza os dados da tela"""
-        self.status_label.config(text="Carregando dados...")
-        self.root.update()
+        def refresh_worker():
+            try:
+                self.root.after(0, lambda: self.show_loading("Carregando dados do banco..."))
+                
+                self.current_data = self.controller.get_all_registros()
+                self.filtered_data = self.current_data
+                
+                self.root.after(0, lambda: self._finish_refresh())
+            except Exception as e:
+                self.root.after(0, lambda: self._finish_refresh_error(str(e)))
         
-        self.current_data = self.controller.get_all_registros()
-        self.filtered_data = self.current_data
+        # Se já está carregando, não faz nada
+        if self.is_loading:
+            return
+            
+        thread = threading.Thread(target=refresh_worker, daemon=True)
+        thread.start()
+    
+    def _finish_refresh(self):
+        """Finaliza o refresh dos dados"""
+        self.hide_loading()
         self.update_tree_data(self.current_data)
         self.update_stats()
-        
         self.status_label.config(text=f"Dados atualizados - {len(self.current_data)} registros")
+    
+    def _finish_refresh_error(self, error_msg):
+        """Finaliza refresh com erro"""
+        self.hide_loading()
+        self.status_label.config(text=f"Erro ao carregar dados: {error_msg}")
+        messagebox.showerror("Erro", f"Erro ao carregar dados: {error_msg}")
     
     def update_tree_data(self, data):
         """Atualiza os dados do treeview"""
@@ -279,6 +322,88 @@ class EtiquetaView:
                      f"Unidades: {stats['total_unidades']} | "
                      f"Qtde Total: {stats['total_quantidade']}")
         self.stats_label.config(text=stats_text)
+    
+    def show_loading(self, message="Carregando..."):
+        """Mostra janela de loading"""
+        if self.is_loading:
+            return
+            
+        self.is_loading = True
+        
+        # Cria janela de loading
+        self.loading_window = tk.Toplevel(self.root)
+        self.loading_window.title("Aguarde")
+        self.loading_window.geometry("300x120")
+        self.loading_window.resizable(False, False)
+        self.loading_window.transient(self.root)
+        self.loading_window.grab_set()
+        
+        # Centraliza a janela de loading
+        self.loading_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 60
+        self.loading_window.geometry(f"300x120+{x}+{y}")
+        
+        # Frame principal
+        frame = ttk.Frame(self.loading_window, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Progressbar animada
+        self.progress = ttk.Progressbar(frame, mode='indeterminate')
+        self.progress.pack(pady=(10, 5))
+        self.progress.start(10)
+        
+        # Label de mensagem
+        self.loading_label = ttk.Label(frame, text=message, font=("Arial", 10))
+        self.loading_label.pack(pady=(5, 10))
+        
+        # Desabilita botões principais
+        self.disable_buttons(True)
+        
+        self.root.update()
+    
+    def hide_loading(self):
+        """Esconde janela de loading"""
+        if not self.is_loading:
+            return
+            
+        self.is_loading = False
+        
+        if self.loading_window:
+            self.progress.stop()
+            self.loading_window.grab_release()
+            self.loading_window.destroy()
+            self.loading_window = None
+        
+        # Reabilita botões principais
+        self.disable_buttons(False)
+        
+        self.root.update()
+    
+    def update_loading_message(self, message):
+        """Atualiza mensagem do loading"""
+        if self.is_loading and self.loading_label:
+            self.loading_label.config(text=message)
+            self.root.update()
+    
+    def disable_buttons(self, disabled=True):
+        """Desabilita/habilita botões durante loading"""
+        state = 'disabled' if disabled else 'normal'
+        
+        # Encontra todos os botões na interface
+        for widget in self.root.winfo_children():
+            self._disable_widget_recursive(widget, state)
+    
+    def _disable_widget_recursive(self, widget, state):
+        """Recursivamente desabilita widgets"""
+        try:
+            if isinstance(widget, (ttk.Button, tk.Button)):
+                widget.config(state=state)
+            elif hasattr(widget, 'winfo_children'):
+                for child in widget.winfo_children():
+                    self._disable_widget_recursive(child, state)
+        except:
+            pass
     
     def get_selected_records(self):
         """Retorna os registros selecionados"""
@@ -328,15 +453,34 @@ class EtiquetaView:
         )
         
         if file_path:
-            self.status_label.config(text="Gerando PDF de etiquetas...")
-            self.root.update()
+            def generate_worker():
+                try:
+                    self.root.after(0, lambda: self.show_loading("Preparando etiquetas..."))
+                    self.root.after(100, lambda: self.update_loading_message("Gerando PDF de etiquetas..."))
+                    
+                    success = self.controller.generate_labels_pdf(selected, file_path)
+                    
+                    self.root.after(0, lambda: self._finish_generate_labels(success, file_path))
+                except Exception as e:
+                    self.root.after(0, lambda: self._finish_generate_labels(False, file_path, str(e)))
             
-            success = self.controller.generate_labels_pdf(selected, file_path)
-            
-            if success:
-                self.status_label.config(text="PDF de etiquetas gerado com sucesso")
-            else:
-                self.status_label.config(text="Falha ao gerar PDF de etiquetas")
+            thread = threading.Thread(target=generate_worker, daemon=True)
+            thread.start()
+    
+    def _finish_generate_labels(self, success, file_path, error_msg=None):
+        """Finaliza a geração de etiquetas"""
+        self.hide_loading()
+        
+        if success:
+            self.status_label.config(text="PDF de etiquetas gerado com sucesso")
+            result = messagebox.askyesno("Sucesso", 
+                f"PDF de etiquetas gerado com sucesso!\n\nDeseja abrir o arquivo?\n{file_path}")
+            if result:
+                os.startfile(file_path)
+        else:
+            error_text = f"Falha ao gerar PDF: {error_msg}" if error_msg else "Falha ao gerar PDF de etiquetas"
+            self.status_label.config(text=error_text)
+            messagebox.showerror("Erro", error_text)
     
     def generate_list_pdf(self):
         """Gera PDF com relatório dos registros selecionados"""
@@ -361,15 +505,34 @@ class EtiquetaView:
         )
         
         if file_path:
-            self.status_label.config(text="Gerando relatório PDF...")
-            self.root.update()
+            def generate_worker():
+                try:
+                    self.root.after(0, lambda: self.show_loading("Preparando relatório..."))
+                    self.root.after(100, lambda: self.update_loading_message("Gerando PDF do relatório..."))
+                    
+                    success = self.controller.generate_list_pdf(selected, file_path)
+                    
+                    self.root.after(0, lambda: self._finish_generate_report(success, file_path))
+                except Exception as e:
+                    self.root.after(0, lambda: self._finish_generate_report(False, file_path, str(e)))
             
-            success = self.controller.generate_list_pdf(selected, file_path)
-            
-            if success:
-                self.status_label.config(text="Relatório PDF gerado com sucesso")
-            else:
-                self.status_label.config(text="Falha ao gerar relatório PDF")
+            thread = threading.Thread(target=generate_worker, daemon=True)
+            thread.start()
+    
+    def _finish_generate_report(self, success, file_path, error_msg=None):
+        """Finaliza a geração do relatório"""
+        self.hide_loading()
+        
+        if success:
+            self.status_label.config(text="Relatório PDF gerado com sucesso")
+            result = messagebox.askyesno("Sucesso", 
+                f"Relatório PDF gerado com sucesso!\n\nDeseja abrir o arquivo?\n{file_path}")
+            if result:
+                os.startfile(file_path)
+        else:
+            error_text = f"Falha ao gerar relatório: {error_msg}" if error_msg else "Falha ao gerar relatório PDF"
+            self.status_label.config(text=error_text)
+            messagebox.showerror("Erro", error_text)
     
     def delete_selected(self):
         """Exclui os registros selecionados"""
