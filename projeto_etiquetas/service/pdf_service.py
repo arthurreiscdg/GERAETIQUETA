@@ -203,42 +203,69 @@ class PDFService:
             height (float): Altura da logo
         """
         try:
-            # Caminho para o arquivo SVG
-            svg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'cdg_logo.svg')
-            
+            assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets')
+            jpg_path = os.path.join(assets_dir, 'cdg_logo.jpg')
+            png_path = os.path.join(assets_dir, 'cdg_logo.png')
+            svg_path = os.path.join(assets_dir, 'cdg_logo.svg')
+
+            # 1) Prefer JPG/PNG raster image (mais simples para impressão Zebra)
+            for img_path in (jpg_path, png_path):
+                try:
+                    if os.path.exists(img_path):
+                        # Calcula escala mantendo proporção
+                        from PIL import Image
+                        with Image.open(img_path) as im:
+                            img_w, img_h = im.size
+                        if img_w > 0 and img_h > 0:
+                            scale_x = width / img_w
+                            scale_y = height / img_h
+                            scale = min(scale_x, scale_y)
+                            scaled_width = img_w * scale
+                            scaled_height = img_h * scale
+                            offset_x = (width - scaled_width) / 2
+                            offset_y = (height - scaled_height) / 2
+
+                            # drawImage expects coords with origin at bottom-left
+                            c.drawImage(img_path, x + offset_x, y + offset_y, width=scaled_width, height=scaled_height, preserveAspectRatio=True, mask='auto')
+                            return
+                except Exception:
+                    # continua para o próximo formato
+                    pass
+
+            # 2) Tenta usar o SVG se disponível
             if SVG_AVAILABLE and os.path.exists(svg_path):
-                # Tenta usar o SVG
-                drawing = svg2rlg(svg_path)
-                
-                if drawing:
-                    # Calcula escala para ajustar ao tamanho desejado
-                    svg_width = drawing.width
-                    svg_height = drawing.height
-                    
-                    if svg_width > 0 and svg_height > 0:
-                        scale_x = width / svg_width
-                        scale_y = height / svg_height
-                        scale = min(scale_x, scale_y)  # Mantém proporção
-                        
-                        # Centraliza a logo redimensionada
-                        scaled_width = svg_width * scale
-                        scaled_height = svg_height * scale
-                        offset_x = (width - scaled_width) / 2
-                        offset_y = (height - scaled_height) / 2
-                        
-                        # Salva estado do canvas
-                        c.saveState()
-                        
-                        # Aplica transformação
-                        c.translate(x + offset_x, y + offset_y)
-                        c.scale(scale, scale)
-                        
-                        # Desenha o SVG
-                        renderPDF.draw(drawing, c, 0, 0)
-                        
-                        # Restaura estado
-                        c.restoreState()
-                        return
+                try:
+                    drawing = svg2rlg(svg_path)
+                    if drawing:
+                        svg_width = drawing.width
+                        svg_height = drawing.height
+                        if svg_width > 0 and svg_height > 0:
+                            scale_x = width / svg_width
+                            scale_y = height / svg_height
+                            scale = min(scale_x, scale_y)  # Mantém proporção
+
+                            # Centraliza a logo redimensionada
+                            scaled_width = svg_width * scale
+                            scaled_height = svg_height * scale
+                            offset_x = (width - scaled_width) / 2
+                            offset_y = (height - scaled_height) / 2
+
+                            # Salva estado do canvas
+                            c.saveState()
+
+                            # Aplica transformação
+                            c.translate(x + offset_x, y + offset_y)
+                            c.scale(scale, scale)
+
+                            # Desenha o SVG
+                            renderPDF.draw(drawing, c, 0, 0)
+
+                            # Restaura estado
+                            c.restoreState()
+                            return
+                except Exception as e:
+                    # se falhar, cai para fallback
+                    print(f"SVG draw failed: {e}")
             
             # Fallback: desenha logo simples se SVG não funcionar
             self._draw_fallback_logo(c, x, y, width, height)
