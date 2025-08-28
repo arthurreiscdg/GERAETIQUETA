@@ -135,17 +135,14 @@ class EtiquetaController:
             return False
         
         try:
-            # Calcula total de etiquetas que serão geradas
-            total_etiquetas = sum(registro[4] for registro in registros)  # Soma das quantidades
-            
-            if total_etiquetas == 0:
-                messagebox.showwarning("Aviso", "Nenhuma etiqueta será gerada (quantidades zeradas)!")
-                return False
-            
+            # Agora geramos uma etiqueta por registro selecionado. A quantidade
+            # (qtde) será exibida em cada etiqueta.
+            total_etiquetas = len(registros)
+
             # Confirma a geração
             resposta = messagebox.askyesno(
                 "Confirmar Geração",
-                f"Serão geradas {total_etiquetas} etiquetas para {len(registros)} registros.\n\n" +
+                f"Serão geradas {total_etiquetas} etiquetas (1 por registro) para {len(registros)} registros.\n\n" +
                 "Deseja continuar?"
             )
             

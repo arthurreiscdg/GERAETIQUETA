@@ -87,24 +87,22 @@ class PDFService:
         Returns:
             List[dict]: Lista de etiquetas individuais
         """
+        # Agora cada registro gera UMA etiqueta. A quantidade (qtde) será
+        # exibida na própria etiqueta ao invés de criar múltiplas cópias.
         etiquetas = []
-        
+
         for registro in registros:
             # registro = (id, op, unidade, arquivos, qtde)
             if len(registro) >= 5:
                 _, op, unidade, arquivos, qtde = registro
-                
-                # Cria uma etiqueta para cada quantidade
-                for i in range(qtde):
-                    etiqueta = {
-                        'op': str(op),
-                        'unidade': str(unidade),
-                        'arquivo': str(arquivos),
-                        'numero': i + 1,
-                        'total': qtde
-                    }
-                    etiquetas.append(etiqueta)
-        
+                etiqueta = {
+                    'op': str(op),
+                    'unidade': str(unidade),
+                    'arquivo': str(arquivos),
+                    'qtde': int(qtde) if qtde is not None else 0
+                }
+                etiquetas.append(etiqueta)
+
         return etiquetas
     
     def _draw_single_label(self, c: canvas.Canvas, etiqueta: dict, x: float, y: float):
@@ -121,47 +119,46 @@ class PDFService:
         c.setStrokeColor(black)
         c.setLineWidth(1)
         c.rect(x, y, self.label_width, self.label_height)
-        
+
         # Configurações de fonte
         title_font_size = 10
         text_font_size = 8
         small_font_size = 6
-        
+
         # Margens internas
         padding = 3 * mm
-        
+
         # Posições dentro da etiqueta
         text_x = x + padding
         current_y = y + self.label_height - padding - 12
-        
+
         # Título principal (OP)
         c.setFont("Helvetica-Bold", title_font_size)
-        c.drawString(text_x, current_y, f"OP: {etiqueta['op']}")
+        c.drawString(text_x, current_y, f"OP: {etiqueta.get('op', '')}")
         current_y -= 15
-        
+
         # Unidade
         c.setFont("Helvetica-Bold", text_font_size)
-        c.drawString(text_x, current_y, f"Unidade: {etiqueta['unidade']}")
+        c.drawString(text_x, current_y, f"Unidade: {etiqueta.get('unidade', '')}")
         current_y -= 12
-        
+
         # Arquivo
         c.setFont("Helvetica", text_font_size)
-        arquivo_text = etiqueta['arquivo']
+        arquivo_text = etiqueta.get('arquivo', '')
         # Trunca se muito longo
         if len(arquivo_text) > 25:
             arquivo_text = arquivo_text[:22] + "..."
         c.drawString(text_x, current_y, f"Arquivo: {arquivo_text}")
         current_y -= 12
-        
-        # Contador (número atual / total)
-        c.setFont("Helvetica", small_font_size)
-        contador_text = f"{etiqueta['numero']}/{etiqueta['total']}"
-        
-        # Alinha à direita
-        text_width = c.stringWidth(contador_text, "Helvetica", small_font_size)
-        counter_x = x + self.label_width - padding - text_width
-        c.drawString(counter_x, y + padding, contador_text)
-        
+
+        # Quantidade (exibida no canto inferior direito)
+        c.setFont("Helvetica-Bold", small_font_size)
+        qtde_text = f"Qtde: {etiqueta.get('qtde', 0)}"
+
+        text_width = c.stringWidth(qtde_text, "Helvetica-Bold", small_font_size)
+        qtde_x = x + self.label_width - padding - text_width
+        c.drawString(qtde_x, y + padding, qtde_text)
+
         # Data/hora de geração (canto inferior esquerdo)
         c.setFont("Helvetica", small_font_size)
         data_geracao = datetime.now().strftime("%d/%m/%Y %H:%M")
