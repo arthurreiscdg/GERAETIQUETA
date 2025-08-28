@@ -120,6 +120,19 @@ class EtiquetaController:
             List[Tuple]: Lista com todos os registros
         """
         return self.database.get_all_registros()
+
+    def get_registros_page(self, page: int = 1, page_size: int = 50) -> tuple:
+        """
+        Retorna uma página de registros e o total de registros.
+
+        Args:
+            page (int): número da página (1-based)
+            page_size (int): registros por página
+
+        Returns:
+            tuple: (registros, total_registros)
+        """
+        return self.database.get_registros_paginated(page, page_size)
     
     def search_registros(self, campo: str, valor: str) -> List[Tuple]:
         """

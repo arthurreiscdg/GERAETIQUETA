@@ -204,6 +204,47 @@ class Database:
             except Exception:
                 pass
 
+    def get_registros_paginated(self, page: int = 1, page_size: int = 50) -> tuple:
+        """
+        Retorna registros paginados junto com o total de registros.
+
+        Args:
+            page (int): página (1-based)
+            page_size (int): número de registros por página
+
+        Returns:
+            tuple: (lista_de_registros, total_registros)
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Total
+            cursor.execute('SELECT COUNT(*) FROM etiquetas')
+            total = cursor.fetchone()[0] or 0
+
+            # Calcula offset
+            if page < 1:
+                page = 1
+            offset = (page - 1) * page_size
+
+            cursor.execute(
+                'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas ORDER BY id DESC LIMIT ? OFFSET ?',
+                (page_size, offset)
+            )
+            rows = cursor.fetchall()
+            return rows, total
+        except Exception as e:
+            print(f"Erro ao buscar registros paginados: {e}")
+            return [], 0
+        finally:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
     def search_registros(self, campo: str, valor: str) -> List[Tuple]:
         """Busca registros por um campo específico."""
         conn = None

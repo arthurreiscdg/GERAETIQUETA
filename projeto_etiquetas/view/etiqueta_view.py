@@ -10,19 +10,26 @@ class EtiquetaView:
         """Inicializa a interface gráfica"""
         self.controller = EtiquetaController()
         self.root = tk.Tk()
+
+        # Dados
         self.current_data = []
         self.filtered_data = []
-        
+
+        # Paginação
+        self.page = 1
+        self.page_size = 200
+        self.total_records = 0
+
         # Loading state
         self.is_loading = False
         self.loading_window = None
-        
+
         # Configuração da janela principal
         self.setup_main_window()
-        
+
         # Criação dos widgets
         self.create_widgets()
-        
+
         # Atualiza a lista inicial
         self.refresh_data()
     
@@ -142,13 +149,36 @@ class EtiquetaView:
         info_btn = ttk.Button(info_frame, text="ℹ️ Sobre", 
                              command=self.show_info, width=18)
         info_btn.grid(row=0, column=0, pady=2)
+
+    def prev_page(self):
+        if self.page > 1:
+            self.page -= 1
+            self.refresh_data()
+
+    def next_page(self):
+        # calcula se existe próxima página
+        max_page = max(1, -(-self.total_records // self.page_size))
+        if self.page < max_page:
+            self.page += 1
+            self.refresh_data()
+
+    def on_page_size_change(self, event=None):
+        try:
+            new_size = int(self.page_size_cb.get())
+            if new_size != self.page_size:
+                self.page_size = new_size
+                self.page = 1
+                self.refresh_data()
+        except Exception:
+            pass
     
     def create_data_frame(self, parent):
         """Cria o frame com a visualização dos dados"""
         data_frame = ttk.LabelFrame(parent, text="Registros", padding="10")
         data_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
         data_frame.columnconfigure(0, weight=1)
-        data_frame.rowconfigure(0, weight=1)
+        data_frame.rowconfigure(0, weight=1)  # A tabela expande
+        # data_frame.rowconfigure(2) não tem weight, então paginação fica fixa
         
         # Treeview para mostrar os dados
         columns = ("ID", "OP", "Unidade", "Arquivo", "Qtde", "Nome")
@@ -178,6 +208,30 @@ class EtiquetaView:
         self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         v_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
         h_scrollbar.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        
+        # Controles de paginação embaixo da tabela
+        pagination_frame = ttk.Frame(data_frame)
+        pagination_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        pagination_frame.columnconfigure(2, weight=1)  # Para centralizar os controles
+
+        prev_btn = ttk.Button(pagination_frame, text="◀ Anterior", command=self.prev_page)
+        prev_btn.grid(row=0, column=0, padx=(0, 10))
+
+        self.page_label = ttk.Label(pagination_frame, text=f"Página {self.page}")
+        self.page_label.grid(row=0, column=1)
+
+        next_btn = ttk.Button(pagination_frame, text="Próxima ▶", command=self.next_page)
+        next_btn.grid(row=0, column=2, padx=(10, 0))
+
+        # Controles de tamanho da página no lado direito
+        size_frame = ttk.Frame(pagination_frame)
+        size_frame.grid(row=0, column=3, sticky=tk.E, padx=(20, 0))
+        
+        ttk.Label(size_frame, text="Itens por página:").grid(row=0, column=0, padx=(0, 5))
+        self.page_size_cb = ttk.Combobox(size_frame, values=[20, 50, 100], width=5, state='readonly')
+        self.page_size_cb.set(self.page_size)
+        self.page_size_cb.grid(row=0, column=1)
+        self.page_size_cb.bind('<<ComboboxSelected>>', self.on_page_size_change)
         
         # Menu de contexto
         self.create_context_menu()
@@ -278,9 +332,18 @@ class EtiquetaView:
         def refresh_worker():
             try:
                 self.root.after(0, lambda: self.show_loading("Carregando dados do banco..."))
-                
-                self.current_data = self.controller.get_all_registros()
-                self.filtered_data = self.current_data
+                # Se há filtro (pesquisa), mantemos comportamento atual (busca completa)
+                if self.search_value.get().strip():
+                    self.current_data = self.controller.get_all_registros()
+                    self.filtered_data = self.current_data
+                else:
+                    # Busca paginada
+                    rows, total = self.controller.get_registros_page(self.page, self.page_size)
+                    self.current_data = rows
+                    self.filtered_data = self.current_data
+                    self.total_records = total
+                    # Atualiza label de página
+                    self.root.after(0, lambda: self.page_label.config(text=f"Página {self.page} / {max(1, -(-self.total_records // self.page_size))}"))
                 
                 self.root.after(0, lambda: self._finish_refresh())
             except Exception as e:
