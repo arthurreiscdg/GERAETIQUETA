@@ -338,8 +338,8 @@ class PDFService:
         padding = 3 * mm
 
         # --- Dimensões da logo ---
-        logo_width = 18 * mm
-        logo_height = 10 * mm
+        logo_width = 25 * mm  # Aumentado de 18mm para 25mm
+        logo_height = 14 * mm  # Aumentado de 10mm para 14mm
 
         # --- Largura disponível para texto ---
         available_width = self.label_width - (2 * padding) - logo_width - (3 * mm)
