@@ -128,9 +128,7 @@ class EtiquetaView:
                                command=self.delete_selected, width=18)
         delete_btn.grid(row=1, column=0, pady=2)
         
-        clear_all_btn = ttk.Button(mgmt_frame, text="⚠️ Limpar Tudo", 
-                                  command=self.clear_all_data, width=18)
-        clear_all_btn.grid(row=2, column=0, pady=2)
+    # Botão de limpar tudo removido por segurança
         
         # Informações do sistema
         info_frame = ttk.LabelFrame(buttons_frame, text="Informações", padding="5")
@@ -398,10 +396,6 @@ class EtiquetaView:
             else:
                 self.status_label.config(text="Falha ao excluir registros")
     
-    def clear_all_data(self):
-        """Limpa todos os dados"""
-        if self.controller.clear_all_data():
-            self.refresh_data()
     
     def show_context_menu(self, event):
         """Mostra o menu de contexto"""
