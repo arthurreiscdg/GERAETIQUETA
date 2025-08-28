@@ -103,6 +103,12 @@ class ExcelService:
                         if pd.isna(arquivo) or str(arquivo).strip() == "":
                             continue
                         
+                        # Ignora linhas onde A contém "Quantidade total" ou similar
+                        arquivo_str = str(arquivo).strip().lower() if not pd.isna(arquivo) else ""
+                        if "quantidade total" in arquivo_str or "qtde total" in arquivo_str or arquivo_str == "total":
+                            print(f"Ignorando linha {i+1}: '{arquivo_str}' na coluna A")
+                            continue
+                        
                         # Converte quantidade para inteiro, se não conseguir, usa 0
                         try:
                             qtde = int(float(qtde)) if not pd.isna(qtde) else 0
