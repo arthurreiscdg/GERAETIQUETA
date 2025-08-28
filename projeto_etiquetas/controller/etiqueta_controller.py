@@ -8,7 +8,9 @@ import os
 class EtiquetaController:
     def __init__(self):
         """Inicializa o controller com os serviços necessários"""
-        self.database = Database()
+        # Permite configurar o banco via variável de ambiente SQLITE_DB_URL
+        db_url = os.environ.get('SQLITE_DB_URL', 'sqlitecloud://cv0idhxxhk.g2.sqlite.cloud:8860/auth.sqlitecloud?apikey=4gtJpnQlCzrAfmGgn9QOdDrFDvalmk3APBcawzNvssc')
+        self.database = Database(db_url)
         self.excel_service = ExcelService()
         self.pdf_service = PDFService()
     
