@@ -102,7 +102,7 @@ class EtiquetaView:
         ttk.Label(search_frame, text="Valor:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
         self.search_value = ttk.Entry(search_frame, width=15)
         self.search_value.grid(row=1, column=1, padx=5, pady=(5, 0))
-        self.search_value.bind('<KeyRelease>', self.on_search_change)
+        self.search_value.bind('<Return>', lambda event: self.search_data())
         
         search_btn = ttk.Button(search_frame, text="🔍 Buscar", command=self.search_data)
         search_btn.grid(row=2, column=0, columnspan=2, pady=5)
@@ -315,10 +315,6 @@ class EtiquetaView:
         
         self.update_tree_data(self.filtered_data)
         self.status_label.config(text=f"Encontrados {len(self.filtered_data)} registros")
-    
-    def on_search_change(self, event):
-        """Executa pesquisa em tempo real"""
-        self.search_data()
     
     def clear_search(self):
         """Limpa a pesquisa"""
