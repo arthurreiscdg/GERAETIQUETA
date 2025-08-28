@@ -416,8 +416,10 @@ class EtiquetaView:
         selected_records = []
         for item in selection:
             values = self.tree.item(item, "values")
-            # Converte para tupla com tipos corretos
-            record = (int(values[0]), values[1], values[2], values[3], int(values[4]))
+            # Converte para tupla com tipos corretos e inclui 'nome' se disponível
+            # values normalmente: (id, op, unidade, arquivo, qtde, nome)
+            nome_val = values[5] if len(values) > 5 else ""
+            record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
             selected_records.append(record)
         
         return selected_records
