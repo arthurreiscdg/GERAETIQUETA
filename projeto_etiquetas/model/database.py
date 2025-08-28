@@ -203,6 +203,67 @@ class Database:
             except Exception:
                 pass
 
+    def check_duplicates(self, registros: List[Tuple[str, str, str, int]]) -> dict:
+        """
+        Verifica se existem registros duplicados que seriam inseridos.
+        
+        Args:
+            registros: Lista de tuplas (op, unidade, arquivos, qtde) para verificar
+            
+        Returns:
+            dict: Resultado da verificação contendo duplicatas encontradas
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            duplicatas = []
+            novos = []
+            
+            for registro in registros:
+                op, unidade, arquivos, qtde = registro
+                
+                # Verifica se já existe registro com mesma OP, unidade e arquivo
+                cursor.execute('''
+                    SELECT id, op, unidade, arquivos, qtde 
+                    FROM etiquetas 
+                    WHERE op = ? AND unidade = ? AND arquivos = ?
+                ''', (op, unidade, arquivos))
+                
+                existente = cursor.fetchone()
+                
+                if existente:
+                    duplicatas.append({
+                        'novo': registro,
+                        'existente': existente,
+                        'mesmo_qtde': existente[4] == qtde
+                    })
+                else:
+                    novos.append(registro)
+            
+            return {
+                'duplicatas': duplicatas,
+                'novos': novos,
+                'total_duplicatas': len(duplicatas),
+                'total_novos': len(novos)
+            }
+            
+        except Exception as e:
+            print(f"Erro ao verificar duplicatas: {e}")
+            return {
+                'duplicatas': [],
+                'novos': registros,
+                'total_duplicatas': 0,
+                'total_novos': len(registros)
+            }
+        finally:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
     def get_statistics(self) -> dict:
         """Retorna estatísticas dos dados."""
         conn = None

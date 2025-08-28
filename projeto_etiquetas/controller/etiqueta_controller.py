@@ -54,18 +54,41 @@ class EtiquetaController:
                 if not resposta:
                     return False
             
-            # Pergunta se deve limpar dados existentes
-            if self.get_total_registros() > 0:
-                resposta = messagebox.askyesno(
-                    "Dados Existentes",
-                    f"Já existem {self.get_total_registros()} registros no banco.\n\n" +
-                    "Deseja limpar os dados existentes antes de importar?"
+            # Verifica duplicatas em vez de perguntar sobre limpar dados
+            verificacao_duplicatas = self.database.check_duplicates(registros)
+            
+            if verificacao_duplicatas['total_duplicatas'] > 0:
+                duplicatas_info = []
+                for dup in verificacao_duplicatas['duplicatas'][:5]:  # Mostra até 5 exemplos
+                    novo = dup['novo']
+                    existente = dup['existente']
+                    status_qtde = "✓ mesma qtde" if dup['mesmo_qtde'] else f"⚠️ qtde diferente ({existente[4]} → {novo[3]})"
+                    duplicatas_info.append(f"• OP: {novo[0]} | Unidade: {novo[1]} | Arquivo: {novo[2]} ({status_qtde})")
+                
+                duplicatas_text = "\n".join(duplicatas_info)
+                if verificacao_duplicatas['total_duplicatas'] > 5:
+                    duplicatas_text += f"\n... e mais {verificacao_duplicatas['total_duplicatas'] - 5} duplicatas"
+                
+                messagebox.showerror(
+                    "Dados Duplicados Encontrados",
+                    f"Encontradas {verificacao_duplicatas['total_duplicatas']} duplicatas que não serão importadas:\n\n" +
+                    duplicatas_text + "\n\n" +
+                    f"Registros novos que serão importados: {verificacao_duplicatas['total_novos']}\n\n" +
+                    "Para evitar duplicatas, apenas registros únicos serão adicionados."
                 )
                 
-                if resposta:
-                    self.database.clear_all_registros()
+                # Se não há registros novos, cancela a importação
+                if verificacao_duplicatas['total_novos'] == 0:
+                    messagebox.showwarning(
+                        "Nenhum Registro Novo",
+                        "Todos os registros já existem no banco de dados.\nNenhum dado foi importado."
+                    )
+                    return False
+                
+                # Usa apenas os registros novos
+                registros = verificacao_duplicatas['novos']
             
-            # Insere os registros
+            # Insere apenas os registros novos (sem duplicatas)
             success = self.database.insert_multiple_registros(registros)
             
             if success:
