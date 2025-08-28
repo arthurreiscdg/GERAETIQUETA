@@ -174,8 +174,9 @@ class EtiquetaController:
             if not resposta:
                 return False
             
-            # Gera o PDF
-            success = self.pdf_service.generate_labels_pdf(registros, output_path)
+            # Gera o PDF — para Zebra 10x5 cm (100x50 mm) imprimimos 1 etiqueta por página
+            # Usuário já solicitou etiquetas Zebra 10x5: usamos label_size_mm=(100,50) e single_per_page=True
+            success = self.pdf_service.generate_labels_pdf(registros, output_path, label_size_mm=(100, 50), single_per_page=True)
             
             if success:
                 messagebox.showinfo(

@@ -1,13 +1,21 @@
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm, cm
 from reportlab.pdfgen import canvas
-from reportlab.lib.colors import black, white
+from reportlab.lib.colors import black, white, blue
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, Frame
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.graphics import renderPDF
+from reportlab.graphics.shapes import Drawing, Rect, String
 from typing import List, Tuple
 import os
 from datetime import datetime
+try:
+    from reportlab.graphics import renderPDF
+    from svglib.svglib import svg2rlg
+    SVG_AVAILABLE = True
+except ImportError:
+    SVG_AVAILABLE = False
 
 class PDFService:
     def __init__(self):
@@ -23,7 +31,7 @@ class PDFService:
         self.labels_per_col = int((self.page_height - 2 * self.margin) // self.label_height)
         self.labels_per_page = self.labels_per_row * self.labels_per_col
     
-    def generate_labels_pdf(self, registros: List[Tuple], output_path: str) -> bool:
+    def generate_labels_pdf(self, registros: List[Tuple], output_path: str, label_size_mm: Tuple[float, float] = None, single_per_page: bool = False) -> bool:
         """
         Gera PDF com etiquetas baseado nos registros
         
@@ -35,40 +43,70 @@ class PDFService:
             bool: True se gerado com sucesso, False caso contrário
         """
         try:
+            # Decide dimensões da etiqueta (em pontos)
+            if label_size_mm:
+                lw = label_size_mm[0] * mm
+                lh = label_size_mm[1] * mm
+            else:
+                lw = self.label_width
+                lh = self.label_height
+
+            # Se for uma etiqueta por página (Zebra), vamos criar um PDF com o tamanho da etiqueta
+            if single_per_page:
+                page_size = (lw, lh)
+                margin = 3 * mm
+            else:
+                page_size = A4
+                margin = self.margin
+
             # Cria o canvas
-            c = canvas.Canvas(output_path, pagesize=A4)
-            
-            # Prepara as etiquetas (expandindo por quantidade)
+            c = canvas.Canvas(output_path, pagesize=page_size)
+
+            # Prepara as etiquetas
             etiquetas = self._prepare_labels_data(registros)
-            
+
             if not etiquetas:
                 return False
-            
+
+            # Determina como as etiquetas serão dispostas na página atual
+            page_width, page_height = page_size
+            labels_per_row = int((page_width - 2 * margin) // lw) if not single_per_page else 1
+            labels_per_col = int((page_height - 2 * margin) // lh) if not single_per_page else 1
+            labels_per_page = max(1, labels_per_row * labels_per_col)
+
             # Gera as etiquetas
             total_labels = len(etiquetas)
             current_label = 0
-            
+
             while current_label < total_labels:
                 # Desenha as etiquetas da página atual
-                labels_on_page = min(self.labels_per_page, total_labels - current_label)
-                
+                labels_on_page = min(labels_per_page, total_labels - current_label)
+
                 for i in range(labels_on_page):
-                    row = i // self.labels_per_row
-                    col = i % self.labels_per_row
-                    
+                    row = i // labels_per_row
+                    col = i % labels_per_row
+
                     # Calcula posição da etiqueta
-                    x = self.margin + col * self.label_width
-                    y = self.page_height - self.margin - (row + 1) * self.label_height
-                    
-                    # Desenha a etiqueta
-                    self._draw_single_label(c, etiquetas[current_label + i], x, y)
-                
+                    x = margin + col * lw
+                    y = page_height - margin - (row + 1) * lh
+
+                    # Desenha a etiqueta usando as dimensões locais lw/lh
+                    # Passamos a posição e os dados; o desenho interno usa self.label_width/self.label_height
+                    # então temporariamente desenhamos usando rw/ rh via parâmetros alterados na chamada
+                    # Para manter mudanças mínimas, ajustamos atributos temporários
+                    old_lw, old_lh, old_margin = self.label_width, self.label_height, self.margin
+                    self.label_width, self.label_height, self.margin = lw, lh, margin
+                    try:
+                        self._draw_single_label(c, etiquetas[current_label + i], x, y)
+                    finally:
+                        self.label_width, self.label_height, self.margin = old_lw, old_lh, old_margin
+
                 current_label += labels_on_page
-                
+
                 # Se ainda há etiquetas, cria nova página
                 if current_label < total_labels:
                     c.showPage()
-            
+
             # Salva o PDF
             c.save()
             return True
@@ -145,9 +183,108 @@ class PDFService:
             
         return lines if lines else [""]
 
+    def _draw_logo(self, c: canvas.Canvas, x: float, y: float, width: float, height: float):
+        """
+        Desenha a logo da empresa CDG usando o arquivo SVG
+        
+        Args:
+            c (canvas.Canvas): Canvas do ReportLab
+            x (float): Posição X
+            y (float): Posição Y
+            width (float): Largura da logo
+            height (float): Altura da logo
+        """
+        try:
+            # Caminho para o arquivo SVG
+            svg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'cdg_logo.svg')
+            
+            if SVG_AVAILABLE and os.path.exists(svg_path):
+                # Tenta usar o SVG
+                drawing = svg2rlg(svg_path)
+                
+                if drawing:
+                    # Calcula escala para ajustar ao tamanho desejado
+                    svg_width = drawing.width
+                    svg_height = drawing.height
+                    
+                    if svg_width > 0 and svg_height > 0:
+                        scale_x = width / svg_width
+                        scale_y = height / svg_height
+                        scale = min(scale_x, scale_y)  # Mantém proporção
+                        
+                        # Centraliza a logo redimensionada
+                        scaled_width = svg_width * scale
+                        scaled_height = svg_height * scale
+                        offset_x = (width - scaled_width) / 2
+                        offset_y = (height - scaled_height) / 2
+                        
+                        # Salva estado do canvas
+                        c.saveState()
+                        
+                        # Aplica transformação
+                        c.translate(x + offset_x, y + offset_y)
+                        c.scale(scale, scale)
+                        
+                        # Desenha o SVG
+                        renderPDF.draw(drawing, c, 0, 0)
+                        
+                        # Restaura estado
+                        c.restoreState()
+                        return
+            
+            # Fallback: desenha logo simples se SVG não funcionar
+            self._draw_fallback_logo(c, x, y, width, height)
+            
+        except Exception as e:
+            print(f"Erro ao desenhar logo SVG: {e}")
+            # Fallback em caso de erro
+            self._draw_fallback_logo(c, x, y, width, height)
+    
+    def _draw_fallback_logo(self, c: canvas.Canvas, x: float, y: float, width: float, height: float):
+        """
+        Desenha uma logo simples como fallback
+        """
+        # Salva o estado atual das cores
+        c.saveState()
+        
+        # Fundo com gradiente simulado (usando tons de azul)
+        c.setFillColor(blue)
+        c.setStrokeColor(blue)
+        c.rect(x, y, width, height, fill=1, stroke=1)
+        
+        # Adiciona uma borda mais escura
+        from reportlab.lib.colors import Color
+        dark_blue = Color(0, 0, 0.7)
+        c.setStrokeColor(dark_blue)
+        c.setLineWidth(0.5)
+        c.rect(x, y, width, height, fill=0, stroke=1)
+        
+        # Texto "CDG" em branco com fonte maior
+        c.setFillColor(white)
+        font_size = min(int(height * 0.6), 10)  # Ajusta o tamanho da fonte baseado na altura
+        c.setFont("Helvetica-Bold", font_size)
+        
+        # Centraliza o texto na logo
+        text_width = c.stringWidth("CDG", "Helvetica-Bold", font_size)
+        text_x = x + (width - text_width) / 2
+        text_y = y + (height - font_size) / 2
+        
+        c.drawString(text_x, text_y, "CDG")
+        
+        # Adiciona um pequeno sublinhado decorativo
+        line_y = text_y - 2
+        line_start_x = text_x
+        line_end_x = text_x + text_width
+        c.setLineWidth(0.8)
+        c.setStrokeColor(white)
+        c.line(line_start_x, line_y, line_end_x, line_y)
+        
+        # Restaura o estado das cores
+        c.restoreState()
+
     def _draw_single_label(self, c: canvas.Canvas, etiqueta: dict, x: float, y: float):
         """
-        Desenha uma única etiqueta no PDF com quebra automática de linhas
+        Desenha uma única etiqueta no PDF com quebra automática de linhas e logo
         
         Args:
             c (canvas.Canvas): Canvas do ReportLab
@@ -168,14 +305,24 @@ class PDFService:
         # Margens internas
         padding = 3 * mm
         
-        # Largura disponível para texto (descontando padding)
-        available_width = self.label_width - (2 * padding)
+        # Dimensões da logo
+        logo_width = 15 * mm
+        logo_height = 8 * mm
+        
+        # Largura disponível para texto (descontando padding e logo)
+        available_width = self.label_width - (2 * padding) - logo_width - (2 * mm)
+
+        # Desenha a logo no canto superior direito
+        logo_x = x + self.label_width - padding - logo_width
+        logo_y = y + self.label_height - padding - logo_height
+        self._draw_logo(c, logo_x, logo_y, logo_width, logo_height)
 
         # Posições dentro da etiqueta
         text_x = x + padding
         current_y = y + self.label_height - padding - 12
 
         # Título principal (OP)
+        c.setFillColor(black)  # Garante que o texto seja preto
         c.setFont("Helvetica-Bold", title_font_size)
         op_text = f"OP: {etiqueta.get('op', '')}"
         op_lines = self._wrap_text(op_text, "Helvetica-Bold", title_font_size, available_width, c)
@@ -206,7 +353,7 @@ class PDFService:
             if i == max_arquivo_lines - 1 and len(arquivo_lines) > max_arquivo_lines:
                 # Adiciona "..." se há mais linhas
                 if len(line) > 40:
-                    line = line[:40] + "..."
+                    line = f"{line[:40]}..."
                 else:
                     line += "..."
             c.drawString(text_x, current_y, line)
