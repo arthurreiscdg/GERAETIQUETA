@@ -304,24 +304,102 @@ class EtiquetaView:
             messagebox.showerror("Erro", error_text)
     
     def search_data(self):
-        """Executa a pesquisa"""
-        campo = self.search_field.get()
-        valor = self.search_value.get().strip()
+        """Executa a pesquisa com loading"""
+        def search_worker():
+            try:
+                campo = self.search_field.get()
+                valor = self.search_value.get().strip()
+                
+                self.root.after(0, lambda: self.show_loading("Pesquisando registros..."))
+                
+                if not valor:
+                    # Se não há valor, volta para dados paginados
+                    if hasattr(self, 'page') and hasattr(self, 'page_size'):
+                        rows, total = self.controller.get_registros_page(self.page, self.page_size)
+                        self.current_data = rows
+                        self.filtered_data = self.current_data
+                        self.total_records = total
+                    else:
+                        self.filtered_data = self.current_data
+                else:
+                    # Executa pesquisa
+                    self.filtered_data = self.controller.search_registros(campo, valor)
+                
+                self.root.after(0, lambda: self._finish_search())
+            except Exception as e:
+                self.root.after(0, lambda: self._finish_search_error(str(e)))
         
-        if not valor:
-            self.filtered_data = self.current_data
-        else:
-            self.filtered_data = self.controller.search_registros(campo, valor)
-        
+        # Se já está carregando, não faz nada
+        if self.is_loading:
+            return
+            
+        thread = threading.Thread(target=search_worker, daemon=True)
+        thread.start()
+    
+    def _finish_search(self):
+        """Finaliza a pesquisa"""
+        self.hide_loading()
         self.update_tree_data(self.filtered_data)
+        
+        # Atualiza label de página se não há filtro ativo
+        valor = self.search_value.get().strip()
+        if not valor and hasattr(self, 'total_records'):
+            max_pages = max(1, -(-self.total_records // self.page_size))
+            self.page_label.config(text=f"Página {self.page} / {max_pages}")
+        
         self.status_label.config(text=f"Encontrados {len(self.filtered_data)} registros")
     
+    def _finish_search_error(self, error_msg):
+        """Finaliza pesquisa com erro"""
+        self.hide_loading()
+        self.status_label.config(text=f"Erro na pesquisa: {error_msg}")
+        messagebox.showerror("Erro", f"Erro na pesquisa: {error_msg}")
+    
     def clear_search(self):
-        """Limpa a pesquisa"""
+        """Limpa a pesquisa com loading"""
+        def clear_worker():
+            try:
+                self.root.after(0, lambda: self.show_loading("Limpando pesquisa..."))
+                
+                # Retorna para dados paginados
+                if hasattr(self, 'page') and hasattr(self, 'page_size'):
+                    rows, total = self.controller.get_registros_page(self.page, self.page_size)
+                    self.current_data = rows
+                    self.filtered_data = self.current_data
+                    self.total_records = total
+                else:
+                    self.filtered_data = self.current_data
+                
+                self.root.after(0, lambda: self._finish_clear_search())
+            except Exception as e:
+                self.root.after(0, lambda: self._finish_clear_search_error(str(e)))
+        
+        # Limpa o campo de pesquisa
         self.search_value.delete(0, tk.END)
-        self.filtered_data = self.current_data
+        
+        # Se já está carregando, não faz nada
+        if self.is_loading:
+            return
+            
+        thread = threading.Thread(target=clear_worker, daemon=True)
+        thread.start()
+    
+    def _finish_clear_search(self):
+        """Finaliza a limpeza da pesquisa"""
+        self.hide_loading()
         self.update_tree_data(self.filtered_data)
+        
+        # Atualiza label de página
+        if hasattr(self, 'total_records'):
+            max_pages = max(1, -(-self.total_records // self.page_size))
+            self.page_label.config(text=f"Página {self.page} / {max_pages}")
+        
         self.status_label.config(text="Pesquisa limpa")
+    
+    def _finish_clear_search_error(self, error_msg):
+        """Finaliza limpeza com erro"""
+        self.hide_loading()
+        self.status_label.config(text=f"Erro ao limpar pesquisa: {error_msg}")
     
     def refresh_data(self):
         """Atualiza os dados da tela"""
