@@ -1,4 +1,5 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 import logging
 from typing import List, Tuple
@@ -11,30 +12,25 @@ logger = logging.getLogger(__name__)
 class Database:
     def __init__(self, db_path: str = None):
         """
-        Inicializa conexão EXCLUSIVA com sqlitecloud.
+        Inicializa conexão com PostgreSQL no Supabase.
         
-        Usa a variável de ambiente SQLITE_DB_URL ou string hardcoded para o projeto.
+        Usa as credenciais fornecidas para conectar ao banco PostgreSQL.
         """
-        # Prioriza variável de ambiente, senão usa string de conexão padrão do projeto
-        env_db = os.environ.get("SQLITE_DB_URL")
-        if env_db:
-            self.db_path = env_db
-        else:
-            # String de conexão hardcoded para este projeto
-            self.db_path = "sqlitecloud://cv0idhxxhk.g2.sqlite.cloud:8860/auth.sqlitecloud?apikey=4gtJpnQlCzrAfmGgn9QOdDrFDvalmk3APBcawzNvssc"
+        # Configurações do banco PostgreSQL Supabase
+        self.db_config = {
+            'user': 'postgres.hftlofgdapnbsobjugla',
+            'password': 'z1g0GZt53164fVDI',
+            'host': 'aws-1-sa-east-1.pooler.supabase.com',
+            'port': 6543,
+            'dbname': 'postgres'
+        }
 
-        # Valida formato da URI
-        if not isinstance(self.db_path, str) or not self.db_path.startswith("sqlitecloud://"):
-            raise RuntimeError(f"URI deve começar com 'sqlitecloud://'. Valor atual: {self.db_path}")
-
-        self.use_cloud = True
-
-        # Verifica disponibilidade do pacote sqlitecloud
+        # Verifica disponibilidade do pacote psycopg2
         try:
-            import sqlitecloud  # type: ignore
-            self._cloud_available = True
+            import psycopg2
+            self._psycopg2_available = True
         except ImportError:
-            raise RuntimeError("Pacote 'sqlitecloud' não está instalado. Instale com: pip install sqlitecloud")
+            raise RuntimeError("Pacote 'psycopg2-binary' não está instalado. Instale com: pip install psycopg2-binary")
 
         # Inicializa esquema (create table se necessário)
         self.init_database()
@@ -43,15 +39,14 @@ class Database:
         self._migrate_add_nome_column()
 
     def init_database(self):
-        """Cria a tabela se ela não existir no sqlitecloud"""
+        """Cria a tabela se ela não existir no PostgreSQL"""
         conn = None
         try:
-            import sqlitecloud  # type: ignore
-            conn = sqlitecloud.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS etiquetas (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     op TEXT NOT NULL,
                     unidade TEXT NOT NULL,
                     arquivos TEXT NOT NULL,
@@ -60,24 +55,16 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            try:
-                conn.commit()
-            except Exception:
-                # alguns conectores na nuvem podem auto-commit ou não implementar commit
-                pass
+            conn.commit()
         except Exception as e:
             print(f"Erro ao inicializar banco de dados: {e}")
         finally:
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+            if conn:
+                conn.close()
 
     def _get_connection(self):
-        """Retorna uma nova conexão via sqlitecloud."""
-        import sqlitecloud  # type: ignore
-        return sqlitecloud.connect(self.db_path)
+        """Retorna uma nova conexão via psycopg2."""
+        return psycopg2.connect(**self.db_config)
 
     def _migrate_add_nome_column(self):
         """Adiciona a coluna 'nome' à tabela se ela não existir"""
@@ -86,29 +73,26 @@ class Database:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # Verifica se a coluna 'nome' já existe
-            cursor.execute("PRAGMA table_info(etiquetas)")
-            columns = [column[1] for column in cursor.fetchall()]
+            # Verifica se a coluna 'nome' já existe no PostgreSQL
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='etiquetas' AND column_name='nome'
+            """)
+            column_exists = cursor.fetchone()
             
-            if 'nome' not in columns:
+            if not column_exists:
                 print("Adicionando coluna 'nome' à tabela etiquetas...")
                 cursor.execute("ALTER TABLE etiquetas ADD COLUMN nome TEXT DEFAULT ''")
-                try:
-                    conn.commit()
-                    print("Coluna 'nome' adicionada com sucesso!")
-                except Exception:
-                    pass
+                conn.commit()
+                print("Coluna 'nome' adicionada com sucesso!")
             else:
                 print("Coluna 'nome' já existe na tabela.")
                 
         except Exception as e:
             print(f"Erro ao migrar tabela: {e}")
         finally:
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+            if conn:
+                conn.close()
 
     def insert_registro(self, op: str, unidade: str, arquivos: str, qtde: int, nome: str = "") -> bool:
         """Insere um novo registro na tabela."""
@@ -118,22 +102,16 @@ class Database:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO etiquetas (op, unidade, arquivos, qtde, nome)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             ''', (op, unidade, arquivos, qtde, nome))
-            try:
-                conn.commit()
-            except Exception:
-                pass
+            conn.commit()
             return True
         except Exception as e:
             print(f"Erro ao inserir registro: {e}")
             return False
         finally:
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+            if conn:
+                conn.close()
 
     def insert_multiple_registros(self, registros: List[Tuple]) -> bool:
         """Insere múltiplos registros de uma vez. Aceita tuplas com 4 ou 5 elementos."""
@@ -168,12 +146,9 @@ class Database:
             
             cursor.executemany('''
                 INSERT INTO etiquetas (op, unidade, arquivos, qtde, nome)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             ''', registros_processados)
-            try:
-                conn.commit()
-            except Exception:
-                pass
+            conn.commit()
             return True
         except Exception as e:
             logger.error(f"Erro ao inserir múltiplos registros: {e}")
@@ -230,7 +205,7 @@ class Database:
             offset = (page - 1) * page_size
 
             cursor.execute(
-                'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas ORDER BY id DESC LIMIT ? OFFSET ?',
+                'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas ORDER BY id DESC LIMIT %s OFFSET %s',
                 (page_size, offset)
             )
             rows = cursor.fetchall()
@@ -252,7 +227,7 @@ class Database:
             conn = self._get_connection()
             cursor = conn.cursor()
             if campo in ("op", "unidade", "arquivos", "nome"):
-                query = f'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas WHERE {campo} LIKE ? ORDER BY id DESC'
+                query = f'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas WHERE {campo} LIKE %s ORDER BY id DESC'
                 cursor.execute(query, (f'%{valor}%',))
                 return cursor.fetchall()
             return []
@@ -272,11 +247,8 @@ class Database:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM etiquetas WHERE id = ?', (registro_id,))
-            try:
-                conn.commit()
-            except Exception:
-                pass
+            cursor.execute('DELETE FROM etiquetas WHERE id = %s', (registro_id,))
+            conn.commit()
             return cursor.rowcount > 0
         except Exception as e:
             print(f"Erro ao deletar registro: {e}")
@@ -295,10 +267,7 @@ class Database:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute('DELETE FROM etiquetas')
-            try:
-                conn.commit()
-            except Exception:
-                pass
+            conn.commit()
             return True
         except Exception as e:
             print(f"Erro ao limpar registros: {e}")
@@ -404,6 +373,28 @@ class Database:
                 'total_unidades': 0,
                 'total_quantidade': 0
             }
+
+    def get_groups_summary(self) -> List[Tuple]:
+        """
+        Retorna um resumo por grupo (op) com contagem de itens e soma de quantidade.
+
+        Returns:
+            List[Tuple]: Lista de tuplas (op, total_itens, total_qtde)
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT op, COUNT(*) as total_itens, SUM(qtde) as total_qtde
+                FROM etiquetas
+                GROUP BY op
+                ORDER BY op DESC
+            ''')
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Erro ao obter resumo de grupos: {e}")
+            return []
         finally:
             try:
                 if conn:

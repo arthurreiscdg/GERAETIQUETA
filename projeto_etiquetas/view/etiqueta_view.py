@@ -16,9 +16,7 @@ class EtiquetaView:
         self.filtered_data = []
 
         # Paginação
-        self.page = 1
-        self.page_size = 50
-        self.total_records = 0
+    # Paginação removida
         
         # Modo de visualização
         self.grouped_view = True  # True = agrupado por OP, False = lista simples
@@ -26,6 +24,10 @@ class EtiquetaView:
         # Loading state
         self.is_loading = False
         self.loading_window = None
+
+        # Estado dos cards
+        self.card_widgets = {}  # mapeia op -> widget do card
+        self.selected_op = None
 
         # Configuração da janela principal
         self.setup_main_window()
@@ -94,22 +96,22 @@ class EtiquetaView:
         # Frame de pesquisa
         search_frame = ttk.LabelFrame(buttons_frame, text="Pesquisar", padding="5")
         search_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
-        
-        # Campo de pesquisa
+
+        # Campo de pesquisa (apenas OP)
         ttk.Label(search_frame, text="Campo:").grid(row=0, column=0, sticky=tk.W)
-        self.search_field = ttk.Combobox(search_frame, values=["op", "unidade", "arquivos", "nome"], 
-                                        state="readonly", width=10)
+        self.search_field = ttk.Combobox(search_frame, values=["op"], 
+                        state="readonly", width=10)
         self.search_field.set("op")
         self.search_field.grid(row=0, column=1, padx=5)
-        
+
         ttk.Label(search_frame, text="Valor:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
         self.search_value = ttk.Entry(search_frame, width=15)
         self.search_value.grid(row=1, column=1, padx=5, pady=(5, 0))
         self.search_value.bind('<Return>', lambda event: self.search_data())
-        
+
         search_btn = ttk.Button(search_frame, text="🔍 Buscar", command=self.search_data, width=20)
         search_btn.grid(row=2, column=0, columnspan=2, pady=3)
-        
+
         clear_search_btn = ttk.Button(search_frame, text="🗙 Limpar", command=self.clear_search, width=20)
         clear_search_btn.grid(row=3, column=0, columnspan=2, pady=3)
         
@@ -158,27 +160,7 @@ class EtiquetaView:
                              command=self.show_info, width=20)
         info_btn.grid(row=0, column=0, pady=3)
 
-    def prev_page(self):
-        if self.page > 1:
-            self.page -= 1
-            self.refresh_data()
-
-    def next_page(self):
-        # calcula se existe próxima página
-        max_page = max(1, -(-self.total_records // self.page_size))
-        if self.page < max_page:
-            self.page += 1
-            self.refresh_data()
-
-    def on_page_size_change(self, event=None):
-        try:
-            new_size = int(self.page_size_cb.get())
-            if new_size != self.page_size:
-                self.page_size = new_size
-                self.page = 1
-                self.refresh_data()
-        except Exception:
-            pass
+    # paginação removida
     
     def create_data_frame(self, parent):
         """Cria o frame com a visualização dos dados"""
@@ -188,10 +170,11 @@ class EtiquetaView:
         data_frame.rowconfigure(0, weight=1)  # A tabela expande
         # data_frame.rowconfigure(2) não tem weight, então paginação fica fixa
         
-        # Treeview para mostrar os dados
+        # Area para mostrar os dados: pode ser Treeview (lista) ou cards (agrupado)
+        # Treeview (lista)
         columns = ("ID", "OP", "Unidade", "Arquivo", "Qtde", "Nome")
         self.tree = ttk.Treeview(data_frame, columns=columns, show="headings", height=20)
-        
+
         # Configurar colunas
         self.tree.heading("ID", text="ID")
         self.tree.heading("OP", text="OP")
@@ -199,47 +182,41 @@ class EtiquetaView:
         self.tree.heading("Arquivo", text="Arquivo")
         self.tree.heading("Qtde", text="Qtde")
         self.tree.heading("Nome", text="Nome")
-        
+
         self.tree.column("ID", width=50, anchor=tk.CENTER)
         self.tree.column("OP", width=100, anchor=tk.CENTER)
         self.tree.column("Unidade", width=150, anchor=tk.W)
         self.tree.column("Arquivo", width=250, anchor=tk.W)  # Reduzida para dar espaço ao Nome
         self.tree.column("Qtde", width=80, anchor=tk.CENTER)
         self.tree.column("Nome", width=150, anchor=tk.W)
-        
+
         # Scrollbars
         v_scrollbar = ttk.Scrollbar(data_frame, orient=tk.VERTICAL, command=self.tree.yview)
         h_scrollbar = ttk.Scrollbar(data_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
         self.tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-        
+
         # Grid
         self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         v_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
         h_scrollbar.grid(row=1, column=0, sticky=(tk.W, tk.E))
+
+        # Canvas para cards (visível apenas em grouped_view)
+        self.cards_canvas = tk.Canvas(data_frame)
+        self.cards_frame = ttk.Frame(self.cards_canvas)
+        self.cards_scroll = ttk.Scrollbar(data_frame, orient=tk.VERTICAL, command=self.cards_canvas.yview)
+        self.cards_canvas.configure(yscrollcommand=self.cards_scroll.set)
+        self.cards_window = self.cards_canvas.create_window((0,0), window=self.cards_frame, anchor='nw')
+
+        # Bind para ajustar tamanho do frame interno
+        def _on_frame_config(event):
+            self.cards_canvas.configure(scrollregion=self.cards_canvas.bbox('all'))
+        self.cards_frame.bind('<Configure>', _on_frame_config)
+
+        # Inicialmente oculta (mostramos dependendo do modo)
+        self.cards_canvas.grid_forget()
+        self.cards_scroll.grid_forget()
         
-        # Controles de paginação embaixo da tabela
-        pagination_frame = ttk.Frame(data_frame)
-        pagination_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
-        pagination_frame.columnconfigure(2, weight=1)  # Para centralizar os controles
-
-        prev_btn = ttk.Button(pagination_frame, text="◀ Anterior", command=self.prev_page)
-        prev_btn.grid(row=0, column=0, padx=(0, 10))
-
-        self.page_label = ttk.Label(pagination_frame, text=f"Página {self.page}")
-        self.page_label.grid(row=0, column=1)
-
-        next_btn = ttk.Button(pagination_frame, text="Próxima ▶", command=self.next_page)
-        next_btn.grid(row=0, column=2, padx=(10, 0))
-
-        # Controles de tamanho da página no lado direito
-        size_frame = ttk.Frame(pagination_frame)
-        size_frame.grid(row=0, column=3, sticky=tk.E, padx=(20, 0))
-        
-        ttk.Label(size_frame, text="Itens por página:").grid(row=0, column=0, padx=(0, 5))
-        self.page_size_cb = ttk.Combobox(size_frame, values=[20, 50, 100], width=5, state='readonly')
-        self.page_size_cb.set(self.page_size)
-        self.page_size_cb.grid(row=0, column=1)
-        self.page_size_cb.bind('<<ComboboxSelected>>', self.on_page_size_change)
+    # Paginação removida (lista completa ou agrupada por OP)
         
         # Menu de contexto
         self.create_context_menu()
@@ -315,22 +292,18 @@ class EtiquetaView:
         """Executa a pesquisa com loading"""
         def search_worker():
             try:
-                campo = self.search_field.get()
+                # Força pesquisa apenas por OP
+                campo = 'op'
                 valor = self.search_value.get().strip()
                 
                 self.root.after(0, lambda: self.show_loading("Pesquisando registros..."))
                 
                 if not valor:
-                    # Se não há valor, volta para dados paginados
-                    if hasattr(self, 'page') and hasattr(self, 'page_size'):
-                        rows, total = self.controller.get_registros_page(self.page, self.page_size)
-                        self.current_data = rows
-                        self.filtered_data = self.current_data
-                        self.total_records = total
-                    else:
-                        self.filtered_data = self.current_data
+                    # Sem paginação: carrega todos os registros
+                    self.current_data = self.controller.get_all_registros()
+                    self.filtered_data = self.current_data
                 else:
-                    # Executa pesquisa
+                    # Executa pesquisa por campo
                     self.filtered_data = self.controller.search_registros(campo, valor)
                 
                 self.root.after(0, lambda: self._finish_search())
@@ -348,13 +321,7 @@ class EtiquetaView:
         """Finaliza a pesquisa"""
         self.hide_loading()
         self.update_tree_data(self.filtered_data)
-        
-        # Atualiza label de página se não há filtro ativo
-        valor = self.search_value.get().strip()
-        if not valor and hasattr(self, 'total_records'):
-            max_pages = max(1, -(-self.total_records // self.page_size))
-            self.page_label.config(text=f"Página {self.page} / {max_pages}")
-        
+    # Sem paginação
         self.status_label.config(text=f"Encontrados {len(self.filtered_data)} registros")
     
     def _finish_search_error(self, error_msg):
@@ -370,13 +337,9 @@ class EtiquetaView:
                 self.root.after(0, lambda: self.show_loading("Limpando pesquisa..."))
                 
                 # Retorna para dados paginados
-                if hasattr(self, 'page') and hasattr(self, 'page_size'):
-                    rows, total = self.controller.get_registros_page(self.page, self.page_size)
-                    self.current_data = rows
-                    self.filtered_data = self.current_data
-                    self.total_records = total
-                else:
-                    self.filtered_data = self.current_data
+                # Agora carregamos todos os registros
+                self.current_data = self.controller.get_all_registros()
+                self.filtered_data = self.current_data
                 
                 self.root.after(0, lambda: self._finish_clear_search())
             except Exception as e:
@@ -396,12 +359,7 @@ class EtiquetaView:
         """Finaliza a limpeza da pesquisa"""
         self.hide_loading()
         self.update_tree_data(self.filtered_data)
-        
-        # Atualiza label de página
-        if hasattr(self, 'total_records'):
-            max_pages = max(1, -(-self.total_records // self.page_size))
-            self.page_label.config(text=f"Página {self.page} / {max_pages}")
-        
+    # Sem paginação
         self.status_label.config(text="Pesquisa limpa")
     
     def _finish_clear_search_error(self, error_msg):
@@ -415,17 +373,9 @@ class EtiquetaView:
             try:
                 self.root.after(0, lambda: self.show_loading("Carregando dados do banco..."))
                 # Se há filtro (pesquisa), mantemos comportamento atual (busca completa)
-                if self.search_value.get().strip():
-                    self.current_data = self.controller.get_all_registros()
-                    self.filtered_data = self.current_data
-                else:
-                    # Busca paginada
-                    rows, total = self.controller.get_registros_page(self.page, self.page_size)
-                    self.current_data = rows
-                    self.filtered_data = self.current_data
-                    self.total_records = total
-                    # Atualiza label de página
-                    self.root.after(0, lambda: self.page_label.config(text=f"Página {self.page} / {max(1, -(-self.total_records // self.page_size))}"))
+                # Carrega todos os registros (remoção de paginação)
+                self.current_data = self.controller.get_all_registros()
+                self.filtered_data = self.current_data
                 
                 self.root.after(0, lambda: self._finish_refresh())
             except Exception as e:
@@ -467,50 +417,174 @@ class EtiquetaView:
     def update_tree_data(self, data):
         """Atualiza os dados do treeview com opção de agrupamento por OP"""
         # Limpa dados existentes
+        # Se modo agrupado: mostrar cards com resumo de OPs
+        if self.grouped_view:
+            # Oculta treeview e mostra canvas de cards
+            try:
+                self.tree.grid_remove()
+                v = self.tree.master.nametowidget(self.tree.winfo_parent()).grid_slaves(row=0, column=1)
+            except Exception:
+                pass
+            self.cards_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+            self.cards_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
+
+            # Limpa cards existentes
+            for child in self.cards_frame.winfo_children():
+                child.destroy()
+
+            # Pega resumo de grupos (mais leve que trazer todos os registros)
+            # Se foi fornecido 'data' (por ex. resultado de busca), calculamos resumo a partir dele.
+            groups = []
+            try:
+                if data:
+                    ops = {}
+                    for registro in data:
+                        op = registro[1]
+                        if op not in ops:
+                            ops[op] = {'total_itens': 0, 'total_qtde': 0}
+                        ops[op]['total_itens'] += 1
+                        try:
+                            ops[op]['total_qtde'] += int(registro[4])
+                        except Exception:
+                            pass
+                    # transforma em lista de tuplas ordenada
+                    groups = [(op, v['total_itens'], v['total_qtde']) for op, v in ops.items()]
+                    groups.sort(reverse=True)
+                else:
+                    groups = self.controller.get_groups_summary()
+            except Exception:
+                groups = []
+
+            if not groups:
+                lbl = ttk.Label(self.cards_frame, text="Nenhum grupo disponível", padding=10)
+                lbl.grid()
+                return
+
+            # Renderiza cada grupo como um card
+            # Limpa mapeamento
+            self.card_widgets = {}
+
+            for idx, grp in enumerate(groups):
+                op, total_itens, total_qtde = grp
+
+                # Usar tk.Frame para permitir alteração de background
+                card = tk.Frame(self.cards_frame, relief=tk.RIDGE, bd=1, padx=12, pady=10, bg="#FFFFFF", highlightthickness=1, highlightbackground="#E0E0E0")
+
+                # Armazena widget
+                self.card_widgets[op] = card
+
+                # Configura colunas internas para permitir expansão
+                card.columnconfigure(0, weight=1)
+                card.columnconfigure(1, weight=0)
+
+                # Conteúdo do card (lado esquerdo)
+                # Garantir que o nome da OP não seja cortado: wrap e alinhamento
+                lbl_op = ttk.Label(card, text=f"OP: {op}", font=("Arial", 11, "bold"), anchor='w', justify='left')
+                lbl_itens = ttk.Label(card, text=f"Itens: {total_itens}")
+                lbl_qtde = ttk.Label(card, text=f"Qtde total: {total_qtde}")
+
+                # Campo de status no card: calculado a partir de total_itens/total_qtde
+                if total_itens == 0:
+                    status_text = 'Vazio'
+                    status_bg = '#D3D3D3'  # cinza
+                    status_fg = '#333333'
+                elif total_qtde > 100:
+                    status_text = 'Alto'
+                    status_bg = '#FFA500'  # laranja
+                    status_fg = '#000000'
+                else:
+                    status_text = 'OK'
+                    status_bg = '#4CAF50'  # verde
+                    status_fg = '#FFFFFF'
+
+                # Badge de status (label com background colorido)
+                lbl_status = tk.Label(card, text=status_text, bg=status_bg, fg=status_fg, padx=6, pady=2, font=("Arial", 9, "bold"))
+
+                lbl_op.grid(row=0, column=0, sticky=(tk.W, tk.E))
+                lbl_itens.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(6,0))
+                lbl_qtde.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(2,0))
+                lbl_status.grid(row=3, column=0, sticky=(tk.W, tk.W), pady=(6,0))
+
+                # Armazena referencias de labels de texto para alternar cor quando o card for selecionado
+                try:
+                    # lista de widgets que devem ficar brancos quando selecionados
+                    card._text_widgets = [lbl_op, lbl_itens, lbl_qtde, lbl_status]
+                    # guarda cor padrão de cada widget
+                    card._text_default = [w.cget('foreground') if hasattr(w, 'cget') else '#000000' for w in card._text_widgets]
+                except Exception:
+                    card._text_widgets = []
+                    card._text_default = []
+
+                # Frame de botões (lado direito) com botões padronizados
+                btns_frame = ttk.Frame(card)
+                # Reservar largura para os botões para não diminuir espaço do nome da OP
+                try:
+                    btns_frame.configure(width=120)
+                except Exception:
+                    pass
+                btns_frame.grid(row=0, column=1, rowspan=3, padx=(12,0), sticky=(tk.N, tk.E))
+
+                btn_w = 16
+                btn_details = ttk.Button(btns_frame, text="Ver detalhes", command=lambda op=op: self.on_card_click(op), width=btn_w)
+                btn_download = ttk.Button(btns_frame, text="Etiquetas", command=lambda op=op: self.download_op_labels(op), width=btn_w)
+                btn_report = ttk.Button(btns_frame, text="Relatório", command=lambda op=op: self.download_op_report(op), width=btn_w)
+
+                # Empilha os botões verticalmente com espaçamento uniforme
+                btn_details.pack(fill=tk.X, pady=(0,4))
+                btn_download.pack(fill=tk.X, pady=(0,4))
+                btn_report.pack(fill=tk.X)
+
+                # Definir wraplength dinâmico razoável para o nome (não cortar)
+                try:
+                    lbl_op.configure(wraplength=180)
+                except Exception:
+                    pass
+
+                # Efeito de hover para melhor visual
+                def on_enter(e, w=card):
+                    try:
+                        if getattr(self, 'selected_op', None) != op:
+                            w.configure(bg="#F5FBFF")
+                    except Exception:
+                        pass
+
+                def on_leave(e, w=card):
+                    try:
+                        if getattr(self, 'selected_op', None) != op:
+                            w.configure(bg="#FFFFFF")
+                    except Exception:
+                        pass
+
+                card.bind("<Enter>", on_enter)
+                card.bind("<Leave>", on_leave)
+                card.bind("<Button-1>", lambda e, op=op: self.select_card(op))
+                lbl_op.bind("<Button-1>", lambda e, op=op: self.select_card(op))
+                lbl_itens.bind("<Button-1>", lambda e, op=op: self.select_card(op))
+                lbl_qtde.bind("<Button-1>", lambda e, op=op: self.select_card(op))
+                lbl_status.bind("<Button-1>", lambda e, op=op: self.select_card(op))
+
+                # Adiciona ao frame (layout será organizado por layout_cards)
+                card.grid(row=0, column=idx, padx=8, pady=8, sticky=(tk.N, tk.S, tk.E, tk.W))
+                # Permite que o conteúdo do card expanda horizontalmente
+                card.update_idletasks()
+
+            # Forçar layout responsivo
+            self.cards_frame.update_idletasks()
+            self.layout_cards()
+
+            # Vincula redimensionamento para recomputar layout
+            self.cards_canvas.bind('<Configure>', lambda e: self.layout_cards())
+
+            return
+
+        # Caso contrário, mostra a lista (treeview)
+        # Limpa tree
         for item in self.tree.get_children():
             self.tree.delete(item)
-        
-        if not data:
-            return
-        
-        if self.grouped_view:
-            # Visualização agrupada por OP
-            # Agrupa os dados por OP
-            ops_dict = {}
-            for registro in data:
-                # registro = (id, op, unidade, arquivos, qtde, nome)
-                op = registro[1]
-                if op not in ops_dict:
-                    ops_dict[op] = []
-                ops_dict[op].append(registro)
-            
-            # Ordena as OPs
-            sorted_ops = sorted(ops_dict.keys())
-            
-            # Adiciona os dados agrupados na árvore
-            for op in sorted_ops:
-                registros_op = ops_dict[op]
-                
-                # Calcula totais para a OP
-                total_itens = len(registros_op)
-                total_qtde = sum(reg[4] for reg in registros_op)
-                
-                # Insere o nó pai (OP)
-                op_node = self.tree.insert("", tk.END, values=(
-                    "", op, f"{total_itens} itens", "", f"Total: {total_qtde}", ""
-                ), tags=("op_parent",))
-                
-                # Insere os registros filhos
-                for registro in registros_op:
-                    self.tree.insert(op_node, tk.END, values=registro, tags=("op_child",))
-            
-            # Configura as tags para estilizar os nós pais
-            self.tree.tag_configure("op_parent", background="#E8F4FD", font=("Arial", 9, "bold"))
-            self.tree.tag_configure("op_child", background="white")
-        else:
-            # Visualização simples (lista)
-            for registro in data:
-                self.tree.insert("", tk.END, values=registro)
+
+        # Exibe registros na treeview
+        for registro in data:
+            self.tree.insert("", tk.END, values=registro)
     
     def update_stats(self):
         """Atualiza as estatísticas"""
@@ -520,6 +594,201 @@ class EtiquetaView:
                      f"Unidades: {stats['total_unidades']} | "
                      f"Qtde Total: {stats['total_quantidade']}")
         self.stats_label.config(text=stats_text)
+
+    def on_card_click(self, op: str):
+        """Abre modal e carrega os registros da OP sob demanda"""
+        modal = tk.Toplevel(self.root)
+        modal.title(f"Detalhes da OP {op}")
+        # Tamanho do modal
+        modal_w, modal_h = 800, 400
+        # Centraliza modal em relação à janela principal
+        self.root.update_idletasks()
+        rx = self.root.winfo_x()
+        ry = self.root.winfo_y()
+        rw = self.root.winfo_width()
+        rh = self.root.winfo_height()
+        mx = rx + (rw // 2) - (modal_w // 2)
+        my = ry + (rh // 2) - (modal_h // 2)
+        modal.geometry(f"{modal_w}x{modal_h}+{mx}+{my}")
+        modal.transient(self.root)
+        modal.grab_set()
+
+        # Frame e progress
+        frame = ttk.Frame(modal, padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        loading_lbl = ttk.Label(frame, text="Carregando detalhes...")
+        loading_lbl.pack(pady=10)
+
+        records_tree = None
+
+        def load_details():
+            nonlocal records_tree
+            try:
+                # Busca apenas os registros para essa OP
+                registros = self.controller.get_registros_by_op(op)
+
+                # Remove label e cria tree
+                loading_lbl.pack_forget()
+
+                cols = ("ID", "OP", "Unidade", "Arquivo", "Qtde", "Nome")
+                records_tree = ttk.Treeview(frame, columns=cols, show='headings')
+                for c in cols:
+                    records_tree.heading(c, text=c)
+                    records_tree.column(c, width=100, anchor=tk.W)
+
+                vs = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=records_tree.yview)
+                records_tree.configure(yscrollcommand=vs.set)
+                records_tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+                vs.pack(fill=tk.Y, side=tk.RIGHT)
+
+                for r in registros:
+                    records_tree.insert('', tk.END, values=r)
+
+            except Exception as e:
+                loading_lbl.config(text=f"Erro ao carregar detalhes: {e}")
+
+        # Carrega em thread para não bloquear UI
+        thread = threading.Thread(target=load_details, daemon=True)
+        thread.start()
+
+    def layout_cards(self):
+        """Organiza os cards para ocupar o espaço disponível de forma responsiva"""
+        try:
+            width = self.cards_canvas.winfo_width() or self.cards_canvas.winfo_reqwidth()
+            if width <= 0:
+                return
+
+            # força o frame interno a acompanhar a largura do canvas
+            try:
+                self.cards_canvas.itemconfig(self.cards_window, width=width)
+            except Exception:
+                pass
+
+            # calcula número de colunas baseado na largura média do card (~220px)
+            card_min_w = 220
+            # Por padrão queremos 2 OPs por linha. Se a largura não comportar 2, cai para 1.
+            desired_cols = 2
+            if width < card_min_w * desired_cols:
+                cols = max(1, width // card_min_w)
+            else:
+                cols = desired_cols
+
+            children = self.cards_frame.winfo_children()
+            # Não ter mais colunas do que cards
+            cols = max(1, min(cols, len(children)))
+
+            for idx, child in enumerate(children):
+                r = idx // cols
+                c = idx % cols
+                child.grid_configure(row=r, column=c, sticky=(tk.N, tk.S, tk.E, tk.W))
+
+            # Ajusta colunas para expandir igualmente
+            for c in range(cols):
+                self.cards_frame.columnconfigure(c, weight=1)
+        except Exception:
+            pass
+
+    def select_card(self, op: str):
+        """Marca visualmente o card selecionado e guarda estado"""
+        # Desmarca anterior
+        if self.selected_op and self.selected_op in self.card_widgets:
+            prev = self.card_widgets[self.selected_op]
+            try:
+                prev.configure(bg="#FFFFFF", bd=1, highlightbackground="#E0E0E0")
+                # restaurar cor dos textos
+                for w, col in zip(getattr(prev, '_text_widgets', []), getattr(prev, '_text_default', [])):
+                    try:
+                        w.configure(foreground=col)
+                    except Exception:
+                        pass
+            except Exception:
+                prev.configure(bg="#FFFFFF")
+
+        # Marca novo
+        widget = self.card_widgets.get(op)
+        if widget:
+            try:
+                widget.configure(bg="#D9EFFF", bd=2, highlightbackground="#4FA3FF")
+                # pintar textos como branco
+                for w in getattr(widget, '_text_widgets', []):
+                    try:
+                        w.configure(foreground='#FFFFFF')
+                    except Exception:
+                        pass
+            except Exception:
+                widget.configure(bg="#D9EFFF")
+            self.selected_op = op
+
+    def download_op_labels(self, op: str):
+        """Gera/baixa etiquetas apenas para uma OP específica"""
+        try:
+            registros = self.controller.get_registros_by_op(op)
+            if not registros:
+                messagebox.showwarning("Aviso", f"Nenhum registro encontrado para OP {op}")
+                return
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"etiquetas_{op}_{timestamp}.pdf"
+            file_path = filedialog.asksaveasfilename(
+                title=f"Salvar PDF de Etiquetas - {op}",
+                defaultextension=".pdf",
+                initialfile=default_name,
+                filetypes=[("Arquivos PDF", "*.pdf")]
+            )
+
+            if not file_path:
+                return
+
+            def worker():
+                try:
+                    self.root.after(0, lambda: self.show_loading("Gerando etiquetas para OP..."))
+                    self.root.after(100, lambda: self.update_loading_message("Gerando PDF de etiquetas..."))
+                    success = self.controller.generate_labels_pdf(registros, file_path)
+                    self.root.after(0, lambda: self._finish_generate_labels(success, file_path))
+                except Exception as e:
+                    self.root.after(0, lambda: self._finish_generate_labels(False, file_path, str(e)))
+
+            thread = threading.Thread(target=worker, daemon=True)
+            thread.start()
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao gerar etiquetas para OP {op}: {e}")
+
+    def download_op_report(self, op: str):
+        """Gera/baixa relatório (lista) apenas para uma OP específica"""
+        try:
+            registros = self.controller.get_registros_by_op(op)
+            if not registros:
+                messagebox.showwarning("Aviso", f"Nenhum registro encontrado para OP {op}")
+                return
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"relatorio_{op}_{timestamp}.pdf"
+            file_path = filedialog.asksaveasfilename(
+                title=f"Salvar Relatório PDF - {op}",
+                defaultextension=".pdf",
+                initialfile=default_name,
+                filetypes=[("Arquivos PDF", "*.pdf")]
+            )
+
+            if not file_path:
+                return
+
+            def worker():
+                try:
+                    self.root.after(0, lambda: self.show_loading("Gerando relatório para OP..."))
+                    self.root.after(100, lambda: self.update_loading_message("Gerando PDF do relatório..."))
+                    success = self.controller.generate_list_pdf(registros, file_path)
+                    self.root.after(0, lambda: self._finish_generate_report(success, file_path))
+                except Exception as e:
+                    self.root.after(0, lambda: self._finish_generate_report(False, file_path, str(e)))
+
+            thread = threading.Thread(target=worker, daemon=True)
+            thread.start()
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao gerar relatório para OP {op}: {e}")
     
     def show_loading(self, message="Carregando..."):
         """Mostra janela de loading"""

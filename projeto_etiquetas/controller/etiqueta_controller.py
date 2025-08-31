@@ -275,6 +275,28 @@ class EtiquetaController:
             int: Total de registros
         """
         return len(self.database.get_all_registros())
+
+    def get_groups_summary(self) -> list:
+        """
+        Retorna o resumo por OP (grupos) para exibição leve na UI.
+
+        Returns:
+            list: Lista de tuplas (op, total_itens, total_qtde)
+        """
+        return self.database.get_groups_summary()
+
+    def get_registros_by_op(self, op: str) -> list:
+        """
+        Retorna todos os registros para uma OP específica.
+
+        Args:
+            op (str): Ordem de produção
+
+        Returns:
+            list: Lista de tuplas de registros
+        """
+        # Usa a busca existente por campo 'op' para simplificar
+        return self.database.search_registros('op', op)
     
     def clear_all_data(self) -> bool:
         """
