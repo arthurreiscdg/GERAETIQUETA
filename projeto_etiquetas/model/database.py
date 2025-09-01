@@ -37,6 +37,9 @@ class Database:
         
         # Migra a tabela para adicionar coluna nome se necessário
         self._migrate_add_nome_column()
+        
+        # Migra a tabela para adicionar coluna status se necessário
+        self._migrate_add_status_column()
 
     def init_database(self):
         """Cria a tabela se ela não existir no PostgreSQL"""
@@ -52,6 +55,7 @@ class Database:
                     arquivos TEXT NOT NULL,
                     qtde INTEGER NOT NULL,
                     nome TEXT DEFAULT '',
+                    status TEXT DEFAULT 'Pendente',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -90,6 +94,34 @@ class Database:
                 
         except Exception as e:
             print(f"Erro ao migrar tabela: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+    def _migrate_add_status_column(self):
+        """Adiciona a coluna 'status' à tabela se ela não existir"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Verifica se a coluna 'status' já existe no PostgreSQL
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='etiquetas' AND column_name='status'
+            """)
+            column_exists = cursor.fetchone()
+            
+            if not column_exists:
+                print("Adicionando coluna 'status' à tabela etiquetas...")
+                cursor.execute("ALTER TABLE etiquetas ADD COLUMN status TEXT DEFAULT 'Pendente'")
+                conn.commit()
+                print("Coluna 'status' adicionada com sucesso!")
+            else:
+                print("Coluna 'status' já existe na tabela.")
+                
+        except Exception as e:
+            print(f"Erro ao migrar tabela (status): {e}")
         finally:
             if conn:
                 conn.close()
@@ -167,7 +199,7 @@ class Database:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas ORDER BY id DESC')
+            cursor.execute('SELECT id, op, unidade, arquivos, qtde, nome, status FROM etiquetas ORDER BY id DESC')
             return cursor.fetchall()
         except Exception as e:
             print(f"Erro ao buscar registros: {e}")
@@ -205,7 +237,7 @@ class Database:
             offset = (page - 1) * page_size
 
             cursor.execute(
-                'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas ORDER BY id DESC LIMIT %s OFFSET %s',
+                'SELECT id, op, unidade, arquivos, qtde, nome, status FROM etiquetas ORDER BY id DESC LIMIT %s OFFSET %s',
                 (page_size, offset)
             )
             rows = cursor.fetchall()
@@ -226,8 +258,8 @@ class Database:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            if campo in ("op", "unidade", "arquivos", "nome"):
-                query = f'SELECT id, op, unidade, arquivos, qtde, nome FROM etiquetas WHERE {campo} LIKE %s ORDER BY id DESC'
+            if campo in ("op", "unidade", "arquivos", "nome", "status"):
+                query = f'SELECT id, op, unidade, arquivos, qtde, nome, status FROM etiquetas WHERE {campo} LIKE %s ORDER BY id DESC'
                 cursor.execute(query, (f'%{valor}%',))
                 return cursor.fetchall()
             return []
@@ -259,6 +291,43 @@ class Database:
                     conn.close()
             except Exception:
                 pass
+
+    def update_status_by_op(self, op: str, status: str) -> bool:
+        """Atualiza o status de todos os registros de uma OP específica"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('UPDATE etiquetas SET status = %s WHERE op = %s', (status, op))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Erro ao atualizar status da OP {op}: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def update_status_by_ids(self, ids: List[int], status: str) -> bool:
+        """Atualiza o status de registros específicos por IDs"""
+        if not ids:
+            return False
+            
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            placeholders = ','.join(['%s'] * len(ids))
+            query = f'UPDATE etiquetas SET status = %s WHERE id IN ({placeholders})'
+            cursor.execute(query, [status] + ids)
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Erro ao atualizar status dos registros {ids}: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
 
     def clear_all_registros(self) -> bool:
         """Limpa todos os registros da tabela."""
@@ -307,7 +376,7 @@ class Database:
                 
                 # Verifica se já existe registro com mesma OP, unidade e arquivo
                 cursor.execute('''
-                    SELECT id, op, unidade, arquivos, qtde, nome 
+                    SELECT id, op, unidade, arquivos, qtde, nome, status 
                     FROM etiquetas 
                     WHERE op = ? AND unidade = ? AND arquivos = ?
                 ''', (op, unidade, arquivos))

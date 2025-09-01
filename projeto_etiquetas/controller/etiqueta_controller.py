@@ -162,6 +162,32 @@ class EtiquetaController:
         """
         return self.database.delete_registro(registro_id)
     
+    def update_status_by_op(self, op: str, status: str) -> bool:
+        """
+        Atualiza o status de todos os registros de uma OP
+        
+        Args:
+            op (str): Número da OP
+            status (str): Novo status
+            
+        Returns:
+            bool: True se atualizado com sucesso
+        """
+        return self.database.update_status_by_op(op, status)
+    
+    def update_status_by_ids(self, ids: List[int], status: str) -> bool:
+        """
+        Atualiza o status de registros específicos
+        
+        Args:
+            ids (List[int]): Lista de IDs dos registros
+            status (str): Novo status
+            
+        Returns:
+            bool: True se atualizado com sucesso
+        """
+        return self.database.update_status_by_ids(ids, status)
+    
     def generate_labels_pdf(self, registros: List[Tuple], output_path: str) -> bool:
         """
         Gera PDF com etiquetas dos registros selecionados
@@ -197,11 +223,16 @@ class EtiquetaController:
             success = self.pdf_service.generate_labels_pdf(registros, output_path, label_size_mm=(100, 50), single_per_page=True)
             
             if success:
+                # Atualiza status dos registros para "Impresso"
+                ids = [registro[0] for registro in registros]  # Primeira coluna é o ID
+                self.update_status_by_ids(ids, "Impresso")
+                
                 messagebox.showinfo(
                     "Sucesso",
                     f"PDF gerado com sucesso!\n\n" +
                     f"Arquivo: {output_path}\n" +
-                    f"Etiquetas geradas: {total_etiquetas}"
+                    f"Etiquetas geradas: {total_etiquetas}\n" +
+                    f"Status atualizado para: Impresso"
                 )
                 return True
             else:

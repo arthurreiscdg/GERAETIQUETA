@@ -183,7 +183,7 @@ class EtiquetaView:
         
         # Area para mostrar os dados: pode ser Treeview (lista) ou cards (agrupado)
         # Treeview (lista)
-        columns = ("ID", "OP", "Unidade", "Arquivo", "Qtde", "Nome")
+        columns = ("ID", "OP", "Unidade", "Arquivo", "Qtde", "Nome", "Status")
         self.tree = ttk.Treeview(data_frame, columns=columns, show="headings", height=20)
 
         # Configurar colunas
@@ -193,6 +193,7 @@ class EtiquetaView:
         self.tree.heading("Arquivo", text="Arquivo")
         self.tree.heading("Qtde", text="Qtde")
         self.tree.heading("Nome", text="Nome")
+        self.tree.heading("Status", text="Status")
 
         self.tree.column("ID", width=50, anchor=tk.CENTER)
         self.tree.column("OP", width=100, anchor=tk.CENTER)
@@ -200,16 +201,17 @@ class EtiquetaView:
         self.tree.column("Arquivo", width=250, anchor=tk.W)  # Reduzida para dar espaço ao Nome
         self.tree.column("Qtde", width=80, anchor=tk.CENTER)
         self.tree.column("Nome", width=150, anchor=tk.W)
+        self.tree.column("Status", width=100, anchor=tk.CENTER)
 
         # Criar widgets de filtro para cada coluna
         self.filter_entries = {}
         filter_frame_inner = ttk.Frame(self.filters_frame)
         filter_frame_inner.pack(fill=tk.X, padx=5, pady=2)
         
-        filter_widths = {"ID": 8, "OP": 12, "Unidade": 18, "Arquivo": 30, "Qtde": 10, "Nome": 18}
+        filter_widths = {"ID": 8, "OP": 12, "Unidade": 18, "Arquivo": 30, "Qtde": 10, "Nome": 18, "Status": 12}
         
         for i, (col_id, col_name) in enumerate([("ID", "ID"), ("OP", "OP"), ("Unidade", "Unidade"), 
-                                               ("Arquivo", "Arquivo"), ("Qtde", "Qtde"), ("Nome", "Nome")]):
+                                               ("Arquivo", "Arquivo"), ("Qtde", "Qtde"), ("Nome", "Nome"), ("Status", "Status")]):
             # Label
             lbl = ttk.Label(filter_frame_inner, text=f"Filtrar {col_name}:", font=("Arial", 8))
             lbl.grid(row=0, column=i*2, sticky=tk.W, padx=(0, 5))
@@ -312,7 +314,7 @@ class EtiquetaView:
         
         # Aplicar filtros aos dados
         filtered_data = []
-        col_indices = {"ID": 0, "OP": 1, "Unidade": 2, "Arquivo": 3, "Qtde": 4, "Nome": 5}
+        col_indices = {"ID": 0, "OP": 1, "Unidade": 2, "Arquivo": 3, "Qtde": 4, "Nome": 5, "Status": 6}
         
         for registro in self.current_data:
             match = True
@@ -871,6 +873,9 @@ class EtiquetaView:
                     self.root.after(0, lambda: self.show_loading("Gerando etiquetas para OP..."))
                     self.root.after(100, lambda: self.update_loading_message("Gerando PDF de etiquetas..."))
                     success = self.controller.generate_labels_pdf(registros, file_path)
+                    if success:
+                        # Atualiza os dados para mostrar o novo status
+                        self.root.after(0, lambda: self.refresh_data())
                     self.root.after(0, lambda: self._finish_generate_labels(success, file_path))
                 except Exception as e:
                     self.root.after(0, lambda: self._finish_generate_labels(False, file_path, str(e)))
@@ -1009,9 +1014,10 @@ class EtiquetaView:
             values = self.tree.item(item, "values")
             if values and len(values) >= 5 and values[0]:  # Se tem ID válido
                 try:
-                    # Garante que temos todos os campos necessários
+                    # Garante que temos todos os campos necessários (agora incluindo status)
                     nome_val = values[5] if len(values) > 5 else ""
-                    record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
+                    status_val = values[6] if len(values) > 6 else "Pendente"
+                    record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val, status_val)
                     selected_records.append(record)
                 except (ValueError, IndexError, TypeError):
                     continue
@@ -1066,6 +1072,10 @@ class EtiquetaView:
                     self.root.after(100, lambda: self.update_loading_message("Gerando PDF de etiquetas..."))
                     
                     success = self.controller.generate_labels_pdf(selected, file_path)
+                    
+                    if success:
+                        # Atualiza os dados para mostrar o novo status
+                        self.root.after(0, lambda: self.refresh_data())
                     
                     self.root.after(0, lambda: self._finish_generate_labels(success, file_path))
                 except Exception as e:
