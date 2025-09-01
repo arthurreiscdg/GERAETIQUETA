@@ -29,6 +29,9 @@ class EtiquetaView:
         self.card_widgets = {}  # mapeia op -> widget do card
         self.selected_op = None
 
+        # Sistema de filtros
+        self.filter_entries = {}
+
         # Configuração da janela principal
         self.setup_main_window()
 
@@ -167,8 +170,16 @@ class EtiquetaView:
         data_frame = ttk.LabelFrame(parent, text="Registros", padding="10")
         data_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
         data_frame.columnconfigure(0, weight=1)
-        data_frame.rowconfigure(0, weight=1)  # A tabela expande
+        data_frame.rowconfigure(1, weight=1)  # A tabela expande (agora na linha 1)
         # data_frame.rowconfigure(2) não tem weight, então paginação fica fixa
+        
+        # Frame de filtros (só visível na visualização simples)
+        self.filters_frame = ttk.Frame(data_frame)
+        self.filters_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
+        self.filters_frame.columnconfigure(0, weight=1)
+        
+        # Inicialmente oculto
+        self.filters_frame.grid_remove()
         
         # Area para mostrar os dados: pode ser Treeview (lista) ou cards (agrupado)
         # Treeview (lista)
@@ -190,15 +201,48 @@ class EtiquetaView:
         self.tree.column("Qtde", width=80, anchor=tk.CENTER)
         self.tree.column("Nome", width=150, anchor=tk.W)
 
+        # Criar widgets de filtro para cada coluna
+        self.filter_entries = {}
+        filter_frame_inner = ttk.Frame(self.filters_frame)
+        filter_frame_inner.pack(fill=tk.X, padx=5, pady=2)
+        
+        filter_widths = {"ID": 8, "OP": 12, "Unidade": 18, "Arquivo": 30, "Qtde": 10, "Nome": 18}
+        
+        for i, (col_id, col_name) in enumerate([("ID", "ID"), ("OP", "OP"), ("Unidade", "Unidade"), 
+                                               ("Arquivo", "Arquivo"), ("Qtde", "Qtde"), ("Nome", "Nome")]):
+            # Label
+            lbl = ttk.Label(filter_frame_inner, text=f"Filtrar {col_name}:", font=("Arial", 8))
+            lbl.grid(row=0, column=i*2, sticky=tk.W, padx=(0, 5))
+            
+            # Entry
+            entry = ttk.Entry(filter_frame_inner, width=filter_widths[col_id], font=("Arial", 8))
+            entry.grid(row=1, column=i*2, sticky=(tk.W, tk.E), padx=(0, 10))
+            entry.bind('<Return>', self.apply_filters)
+            
+            self.filter_entries[col_id] = entry
+            
+            # Configurar expansão das colunas
+            filter_frame_inner.columnconfigure(i*2, weight=1)
+
+        # Botões de ação dos filtros
+        buttons_frame = ttk.Frame(filter_frame_inner)
+        buttons_frame.grid(row=1, column=len(columns)*2, padx=(10, 0))
+        
+        filter_btn = ttk.Button(buttons_frame, text="🔍 Filtrar", command=self.apply_filters)
+        filter_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        clear_btn = ttk.Button(buttons_frame, text="🗙 Limpar", command=self.clear_filters)
+        clear_btn.pack(side=tk.LEFT)
+
         # Scrollbars
         v_scrollbar = ttk.Scrollbar(data_frame, orient=tk.VERTICAL, command=self.tree.yview)
         h_scrollbar = ttk.Scrollbar(data_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
         self.tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
 
-        # Grid
-        self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        v_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        h_scrollbar.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        # Grid - ajustado para começar na linha 1 (depois dos filtros)
+        self.tree.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        v_scrollbar.grid(row=1, column=1, sticky=(tk.N, tk.S))
+        h_scrollbar.grid(row=2, column=0, sticky=(tk.W, tk.E))
 
         # Canvas para cards (visível apenas em grouped_view)
         self.cards_canvas = tk.Canvas(data_frame)
@@ -249,6 +293,61 @@ class EtiquetaView:
         # Atualiza estatísticas
         self.update_stats()
     
+    def apply_filters(self, event=None):
+        """Aplica os filtros aos dados"""
+        if self.grouped_view:
+            return  # Filtros só funcionam na visualização simples
+            
+        # Obter valores dos filtros
+        filters = {}
+        for col_id, entry in self.filter_entries.items():
+            value = entry.get().strip()
+            if value:
+                filters[col_id] = value.lower()
+        
+        if not filters:
+            # Se não há filtros, mostra todos os dados
+            self.update_tree_data(self.current_data)
+            return
+        
+        # Aplicar filtros aos dados
+        filtered_data = []
+        col_indices = {"ID": 0, "OP": 1, "Unidade": 2, "Arquivo": 3, "Qtde": 4, "Nome": 5}
+        
+        for registro in self.current_data:
+            match = True
+            for col_id, filter_value in filters.items():
+                col_index = col_indices[col_id]
+                if col_index < len(registro):
+                    cell_value = str(registro[col_index]).lower()
+                    if filter_value not in cell_value:
+                        match = False
+                        break
+            
+            if match:
+                filtered_data.append(registro)
+        
+        # Atualizar visualização com dados filtrados
+        self.filtered_data = filtered_data
+        self.update_tree_data(filtered_data)
+        
+        # Atualizar status com feedback mais detalhado
+        if filters:
+            filter_info = ", ".join([f"{col}: '{val}'" for col, val in filters.items()])
+            self.status_label.config(text=f"Filtros aplicados ({filter_info}) - {len(filtered_data)} de {len(self.current_data)} registros")
+        else:
+            self.status_label.config(text=f"Filtrado: {len(filtered_data)} de {len(self.current_data)} registros")
+    
+    def clear_filters(self):
+        """Limpa todos os filtros"""
+        for entry in self.filter_entries.values():
+            entry.delete(0, tk.END)
+        
+        # Restaurar dados originais
+        self.filtered_data = self.current_data
+        self.update_tree_data(self.current_data)
+        self.status_label.config(text=f"Dados atualizados - {len(self.current_data)} registros")
+
     def import_excel(self):
         """Abre diálogo para importar arquivo Excel"""
         file_path = filedialog.askopenfilename(
@@ -348,6 +447,11 @@ class EtiquetaView:
         # Limpa o campo de pesquisa
         self.search_value.delete(0, tk.END)
         
+        # Limpa os filtros se estão disponíveis
+        if hasattr(self, 'filter_entries'):
+            for entry in self.filter_entries.values():
+                entry.delete(0, tk.END)
+        
         # Se já está carregando, não faz nada
         if self.is_loading:
             return
@@ -419,14 +523,15 @@ class EtiquetaView:
         # Limpa dados existentes
         # Se modo agrupado: mostrar cards com resumo de OPs
         if self.grouped_view:
-            # Oculta treeview e mostra canvas de cards
+            # Esconde filtros e treeview, mostra canvas de cards
+            self.filters_frame.grid_remove()
             try:
                 self.tree.grid_remove()
-                v = self.tree.master.nametowidget(self.tree.winfo_parent()).grid_slaves(row=0, column=1)
+                v = self.tree.master.nametowidget(self.tree.winfo_parent()).grid_slaves(row=1, column=1)
             except Exception:
                 pass
-            self.cards_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-            self.cards_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
+            self.cards_canvas.grid(row=0, column=0, rowspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
+            self.cards_scroll.grid(row=0, column=1, rowspan=3, sticky=(tk.N, tk.S))
 
             # Limpa cards existentes
             for child in self.cards_frame.winfo_children():
@@ -578,15 +683,16 @@ class EtiquetaView:
             return
 
         # Caso contrário, mostra a lista (treeview)
-        # Oculta canvas de cards e mostra treeview
+        # Mostra filtros e treeview, esconde canvas de cards
+        self.filters_frame.grid()
         try:
             self.cards_canvas.grid_remove()
             self.cards_scroll.grid_remove()
         except Exception:
             pass
         
-        # Mostra o treeview novamente
-        self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Mostra o treeview novamente na posição correta
+        self.tree.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         # Reposiciona scrollbars se necessário
         try:
             for widget in self.tree.master.winfo_children():
