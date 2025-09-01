@@ -578,6 +578,26 @@ class EtiquetaView:
             return
 
         # Caso contrário, mostra a lista (treeview)
+        # Oculta canvas de cards e mostra treeview
+        try:
+            self.cards_canvas.grid_remove()
+            self.cards_scroll.grid_remove()
+        except Exception:
+            pass
+        
+        # Mostra o treeview novamente
+        self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Reposiciona scrollbars se necessário
+        try:
+            for widget in self.tree.master.winfo_children():
+                if isinstance(widget, ttk.Scrollbar):
+                    if widget.cget('orient') == 'vertical':
+                        widget.grid(row=0, column=1, sticky=(tk.N, tk.S))
+                    elif widget.cget('orient') == 'horizontal':
+                        widget.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        except Exception:
+            pass
+        
         # Limpa tree
         for item in self.tree.get_children():
             self.tree.delete(item)
