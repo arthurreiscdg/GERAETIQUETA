@@ -893,38 +893,22 @@ class EtiquetaView:
             pass
     
     def get_selected_records(self):
-        """Retorna os registros selecionados (apenas registros filhos, não nós de OP)"""
+        """Retorna os registros selecionados"""
         selection = self.tree.selection()
         if not selection:
             return []
         
         selected_records = []
         for item in selection:
-            # Verifica se é um nó pai (OP) ou filho (registro)
-            tags = self.tree.item(item, "tags")
-            
-            if "op_parent" in tags:
-                # Se selecionou uma OP, inclui todos os filhos dela
-                children = self.tree.get_children(item)
-                for child in children:
-                    values = self.tree.item(child, "values")
-                    if values[0]:  # Se tem ID (não é linha de total)
-                        try:
-                            nome_val = values[5] if len(values) > 5 else ""
-                            record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
-                            selected_records.append(record)
-                        except (ValueError, IndexError):
-                            continue
-            elif "op_child" in tags:
-                # Se selecionou um registro específico
-                values = self.tree.item(item, "values")
-                if values[0]:  # Se tem ID
-                    try:
-                        nome_val = values[5] if len(values) > 5 else ""
-                        record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
-                        selected_records.append(record)
-                    except (ValueError, IndexError):
-                        continue
+            values = self.tree.item(item, "values")
+            if values and len(values) >= 5 and values[0]:  # Se tem ID válido
+                try:
+                    # Garante que temos todos os campos necessários
+                    nome_val = values[5] if len(values) > 5 else ""
+                    record = (int(values[0]), values[1], values[2], values[3], int(values[4]), nome_val)
+                    selected_records.append(record)
+                except (ValueError, IndexError, TypeError):
+                    continue
         
         return selected_records
     
@@ -948,6 +932,15 @@ class EtiquetaView:
                 return
             
             selected = self.filtered_data
+        else:
+            # Confirma geração para registros selecionados
+            resposta = messagebox.askyesno(
+                "Gerar Etiquetas",
+                f"Gerar etiquetas para {len(selected)} registro(s) selecionado(s)?"
+            )
+            
+            if not resposta:
+                return
         
         # Diálogo para salvar arquivo
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -999,7 +992,26 @@ class EtiquetaView:
             if not self.filtered_data:
                 messagebox.showwarning("Aviso", "Nenhum registro disponível!")
                 return
+            
+            resposta = messagebox.askyesno(
+                "Gerar Relatório",
+                f"Nenhum registro selecionado.\n\n"
+                f"Deseja gerar relatório para todos os {len(self.filtered_data)} registros visíveis?"
+            )
+            
+            if not resposta:
+                return
+            
             selected = self.filtered_data
+        else:
+            # Confirma geração para registros selecionados
+            resposta = messagebox.askyesno(
+                "Gerar Relatório",
+                f"Gerar relatório para {len(selected)} registro(s) selecionado(s)?"
+            )
+            
+            if not resposta:
+                return
         
         # Diálogo para salvar arquivo
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
